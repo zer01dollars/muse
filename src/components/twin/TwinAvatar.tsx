@@ -50,14 +50,24 @@ function applyMorphs(root: THREE.Object3D, params: TwinParams) {
 }
 
 
-/** Soft skin tint multiply — keeps albedo detail, shifts tone/undertone. */
-function skinTintColor(params: TwinParams): THREE.Color {
-  const skin = skinColorFromParams(params.skinTone, params.undertone);
-  const c = new THREE.Color(skin);
-  // Pull toward mid-gray so map detail remains; freckles slightly darken
-  c.lerp(new THREE.Color("#e8c4b0"), 0.35);
-  c.offsetHSL(0.005, 0.02, -params.freckles * 0.06);
+/** Near-white warm multiply when albedo is present — preserves pores/detail. */
+function mapTintColor(params: TwinParams): THREE.Color {
+  // Albedo maps already carry skin tone; only nudge warmth / freckles lightly.
+  const c = new THREE.Color("#fff8f2");
+  // Subtle undertone shift without crushing luminance
+  c.offsetHSL(params.undertone * 0.012, 0.02 + Math.abs(params.undertone) * 0.02, 0);
+  c.offsetHSL(0, 0, -params.freckles * 0.035);
+  // Keep multiply ≥ ~0.88 so midtone albedo stays readable
+  const minL = 0.88;
+  const hsl = { h: 0, s: 0, l: 0 };
+  c.getHSL(hsl);
+  if (hsl.l < minL) c.setHSL(hsl.h, hsl.s, minL);
   return c;
+}
+
+/** Flat fallback when maps have not loaded yet. */
+function flatSkinColor(params: TwinParams): THREE.Color {
+  return new THREE.Color(skinColorFromParams(params.skinTone, params.undertone));
 }
 
 function makeSkinPhysical(
@@ -66,31 +76,35 @@ function makeSkinPhysical(
   params: TwinParams
 ): THREE.MeshPhysicalMaterial {
   const gloss = 0.28 + params.gloss * 0.5;
-  return new THREE.MeshPhysicalMaterial({
+  const mat = new THREE.MeshPhysicalMaterial({
     map: map ?? undefined,
-    color: map ? tint : new THREE.Color(skinColorFromParams(params.skinTone, params.undertone)),
+    color: map ? tint : flatSkinColor(params),
     roughness: Math.min(0.68, Math.max(0.32, 0.72 - gloss * 0.55)),
     metalness: 0.0,
-    clearcoat: 0.08 + params.gloss * 0.18,
-    clearcoatRoughness: 0.42,
-    sheen: 0.42,
-    sheenRoughness: 0.5,
+    clearcoat: 0.06 + params.gloss * 0.14,
+    clearcoatRoughness: 0.48,
+    sheen: 0.28,
+    sheenRoughness: 0.55,
     sheenColor: new THREE.Color("#f0c4b4"),
-    envMapIntensity: 0.55,
+    envMapIntensity: 0.7,
     side: THREE.DoubleSide,
   });
+  mat.needsUpdate = true;
+  return mat;
 }
 
 /**
  * Photoreal head: keep high-res face albedo on skin; only override lips / eyes.
- * Previously wiped maps with flat MeshPhysical colors — that killed photorealism.
+ * Name matching is token-tight — bare "eye" over-matched and wiped skin.
  */
 function paintHead(
   root: THREE.Object3D,
   params: TwinParams,
   faceMap: THREE.Texture | null
 ) {
-  const tint = skinTintColor(params);
+  const tint = mapTintColor(params);
+  let skinCount = 0;
+  let mapped = 0;
 
   root.traverse((obj) => {
     const mesh = obj as THREE.Mesh;
@@ -106,17 +120,35 @@ function paintHead(
         : (mesh.material as THREE.Material | undefined)?.name) || "";
     const n = `${mesh.name} ${matName}`.toLowerCase();
 
+    // Token includes on Vit* names (vitiris etc.) — NEVER bare "eye" (over-matched skin)
     const isIris = n.includes("iris");
     const isSclera = n.includes("sclera") || n.includes("eyeback");
-    const isCornea = n.includes("cornea") || n.includes("tear");
+    const isCornea =
+      n.includes("cornea") || n.includes("tearline") || n.includes("tear");
     const isMouth =
       n.includes("mouth") ||
       n.includes("lip") ||
       n.includes("tooth") ||
+      n.includes("teeth") ||
       n.includes("gum");
     const isShadow = n.includes("eyeshadow") || n.includes("lash");
-    const isEyePart =
-      isIris || isSclera || isCornea || n.includes("eye") || n.includes("caruncle");
+    const isCaruncle = n.includes("caruncle");
+    // Eye geometry scale only — mesh name starts with Eye_
+    const meshN = mesh.name.toLowerCase();
+    const isEyeMesh = meshN.startsWith("eye_") || meshN.startsWith("eye-");
+    const isEyePart = isIris || isSclera || isCornea || isCaruncle;
+
+    // Prefer embedded albedo if GLB ever ships with one
+    const prev = Array.isArray(mesh.material) ? mesh.material[0] : mesh.material;
+    const embedded =
+      prev &&
+      (prev instanceof THREE.MeshStandardMaterial ||
+        prev instanceof THREE.MeshPhysicalMaterial) &&
+      prev.map
+        ? prev.map
+        : null;
+    // Share singleton albedo (safe across materials); prefer external map over embedded
+    const skinMap = faceMap ?? embedded;
 
     let material: THREE.Material;
 
@@ -142,7 +174,6 @@ function paintHead(
         side: THREE.DoubleSide,
       });
     } else if (isCornea) {
-      // Subtle cornea sheen (transmission-ish without breaking export)
       material = new THREE.MeshPhysicalMaterial({
         color: "#ffffff",
         roughness: 0.05,
@@ -181,24 +212,33 @@ function paintHead(
         side: THREE.DoubleSide,
       });
     } else if (isEyePart) {
+      // Caruncle / residual eye parts — soft flesh, not iris paint-wipe
       material = new THREE.MeshPhysicalMaterial({
-        color: params.irisColor,
-        roughness: 0.18,
-        metalness: 0.05,
-        clearcoat: 0.5,
+        color: "#e8b4a4",
+        roughness: 0.45,
+        metalness: 0,
+        clearcoat: 0.2,
         side: THREE.DoubleSide,
       });
     } else {
-      // Skin — photoreal albedo + physical skin response
-      material = makeSkinPhysical(faceMap, tint, params);
+      skinCount++;
+      material = makeSkinPhysical(skinMap, tint, params);
+      if (skinMap) mapped++;
     }
 
     mesh.material = material;
 
-    if (n.includes("eye") && !isShadow) {
+    if (isEyeMesh && !isShadow) {
       const eyeS = 0.96 + params.eyeSize * 0.12;
       mesh.scale.setScalar(eyeS);
     }
+  });
+
+  console.info("[Muse] paintHead", {
+    hasFaceMap: !!faceMap,
+    skinMeshes: skinCount,
+    withAlbedo: mapped,
+    tint: `#${tint.getHexString()}`,
   });
 }
 
@@ -207,8 +247,10 @@ function tintBody(
   params: TwinParams,
   bodyMap: THREE.Texture | null
 ) {
-  const tint = skinTintColor(params);
+  const tint = mapTintColor(params);
   const skinHex = skinColorFromParams(params.skinTone, params.undertone);
+  let bodySkin = 0;
+  let mapped = 0;
 
   root.traverse((obj) => {
     const mesh = obj as THREE.Mesh;
@@ -237,26 +279,39 @@ function tintBody(
         mat.color.set("#0a0a0c");
         mat.roughness = 0.5;
       } else {
-        // Skin / body — apply high-res albedo, tint via color multiply
-        if (bodyMap) {
-          mat.map = bodyMap;
+        bodySkin++;
+        // Skin / body — apply high-res albedo; near-white multiply keeps pores
+        const embedded = mat.map;
+        const map = bodyMap ?? embedded;
+        if (map) {
+          mat.map = map;
+          mat.color.copy(tint);
+          mapped++;
+        } else {
+          mat.color.set(skinHex);
         }
-        mat.color.copy(bodyMap ? tint : new THREE.Color(skinHex));
         mat.roughness = Math.min(0.78, Math.max(0.38, 0.7 - params.gloss * 0.28));
         mat.metalness = 0;
         if (mat instanceof THREE.MeshPhysicalMaterial) {
-          mat.clearcoat = 0.06 + params.gloss * 0.12;
-          mat.clearcoatRoughness = 0.48;
-          mat.sheen = 0.32;
-          mat.sheenRoughness = 0.55;
+          mat.clearcoat = 0.05 + params.gloss * 0.1;
+          mat.clearcoatRoughness = 0.52;
+          mat.sheen = 0.22;
+          mat.sheenRoughness = 0.58;
           mat.sheenColor = new THREE.Color("#e8b4a8");
-          mat.envMapIntensity = 0.5;
+          mat.envMapIntensity = 0.65;
         }
       }
       mat.needsUpdate = true;
     }
     mesh.castShadow = true;
     mesh.receiveShadow = true;
+  });
+
+  console.info("[Muse] tintBody", {
+    hasBodyMap: !!bodyMap,
+    skinMats: bodySkin,
+    withAlbedo: mapped,
+    tint: `#${tint.getHexString()}`,
   });
 }
 

@@ -15,7 +15,7 @@ export function StudioToneMapping() {
   useEffect(() => {
     gl.toneMapping = THREE.ACESFilmicToneMapping;
     // Slightly lifted for skin — photoreal albedo reads better warm
-    gl.toneMappingExposure = 1.12;
+    gl.toneMappingExposure = 1.22;
     gl.outputColorSpace = THREE.SRGBColorSpace;
     gl.shadowMap.enabled = true;
     gl.shadowMap.type = THREE.PCFSoftShadowMap;
@@ -32,9 +32,9 @@ export function StudioLights() {
       <fog attach="fog" args={["#06060a", 7, 18]} />
 
       {/* Soft ambient — lavender cool lift */}
-      <ambientLight intensity={0.18} color="#c4b8e8" />
+      <ambientLight intensity={0.28} color="#d4c8f0" />
       <hemisphereLight
-        intensity={0.28}
+        intensity={0.38}
         color="#fff4ea"
         groundColor="#1a1428"
       />
@@ -43,7 +43,7 @@ export function StudioLights() {
       <directionalLight
         castShadow
         position={[2.2, 5.8, 3.2]}
-        intensity={1.15}
+        intensity={1.28}
         color="#fff2e4"
         shadow-mapSize={[2048, 2048]}
         shadow-camera-far={22}
@@ -82,7 +82,7 @@ export function StudioLights() {
       {/* Subtle under-fill so jaw/neck don't crush to black */}
       <pointLight position={[0, 0.6, 1.2]} intensity={0.22} color="#e8d4ff" distance={5} />
 
-      <Environment preset="studio" environmentIntensity={0.62} />
+      <Environment preset="studio" environmentIntensity={0.78} />
 
       <AccumulativeShadows
         temporal

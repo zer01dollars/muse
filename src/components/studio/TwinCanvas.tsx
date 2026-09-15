@@ -16,23 +16,24 @@ import { TwinAvatar, TwinLoadingFallback } from "@/components/twin/TwinAvatar";
 export type CanvasHandle = { gl: HTMLCanvasElement | null };
 
 function StudioPostFX() {
+  // Mild AO/bloom — aggressive N8AO was crushing albedo into gray mush
   return (
     <EffectComposer multisampling={0} enableNormalPass={false}>
       <N8AO
-        aoRadius={0.45}
-        intensity={1.15}
-        distanceFalloff={0.85}
+        aoRadius={0.35}
+        intensity={0.42}
+        distanceFalloff={1.1}
         quality="medium"
         halfRes
-        color="#0a0610"
+        color="#1a1220"
       />
       <Bloom
-        luminanceThreshold={0.88}
-        luminanceSmoothing={0.35}
-        intensity={0.28}
+        luminanceThreshold={0.9}
+        luminanceSmoothing={0.4}
+        intensity={0.22}
         mipmapBlur
       />
-      <Vignette offset={0.28} darkness={0.55} />
+      <Vignette offset={0.32} darkness={0.35} />
       <SMAA />
     </EffectComposer>
   );

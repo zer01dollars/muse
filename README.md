@@ -40,15 +40,15 @@ High-res albedo maps also CC0 (same lineage):
 - `public/models/vit_face_bc.png` — face diffuse (~7.8MB)
 - `public/models/vit_body_bc.png` — body diffuse (~7MB)
 
-Applied as `map` on MeshPhysicalMaterial skin (tint via `material.color` multiply). Lips / iris / cornea keep stylized overrides.
+Applied as `map` on MeshPhysicalMaterial skin. When maps are present, `material.color` stays near-white (slight warm) so albedo pores stay visible — a dark tint multiply was crushing detail to mannequin gray. Lips / iris / cornea keep stylized overrides.
 
 Hair is procedural **cards** (canvas strand alpha texture), parented to `MuseHairAnchor` on the seated head scalp — not a third-party hair GLB.
 
 ## Photoreal pipeline (v6)
 
-1. PBR skin maps + MeshPhysical clearcoat/sheen  
+1. PBR skin maps + MeshPhysical clearcoat/sheen (near-white map tint)  
 2. Beauty lighting (soft key / cool fill / warm rim) + studio HDRI  
-3. EffectComposer: N8AO, mild Bloom, Vignette, SMAA  
+3. EffectComposer: mild N8AO, Bloom, Vignette, SMAA (AO dialed down so albedo reads)  
 4. Hair cards with strand alpha instead of capsule blobs  
 
 ## Brand
