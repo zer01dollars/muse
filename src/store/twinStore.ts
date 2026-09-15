@@ -166,7 +166,7 @@ export const useTwinStore = create<TwinState>()(
       setMobileWarned: (v) => set({ mobileWarned: v }),
     }),
     {
-      name: "muse-twin-v5",
+      name: "muse-twin-v6",
       partialize: (s) => ({
         params: s.params,
         proUnlocked: s.proUnlocked,

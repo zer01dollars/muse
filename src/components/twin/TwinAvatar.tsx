@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { createPortal, useFrame } from "@react-three/fiber";
+import { createPortal, useFrame, useThree } from "@react-three/fiber";
 import { useGLTF, useAnimations, Html } from "@react-three/drei";
 import * as SkeletonUtils from "three/examples/jsm/utils/SkeletonUtils.js";
 import * as THREE from "three";
@@ -11,6 +11,7 @@ import {
   type TwinParams,
 } from "@/store/twinStore";
 import { ProceduralHair } from "./ProceduralHair";
+import { loadSkinTextures } from "./skinTextures";
 
 useGLTF.preload("/models/vitruvian_body.glb");
 useGLTF.preload("/models/vitruvian_head.glb");
@@ -19,7 +20,6 @@ const LIP_COLOR = "#c45a6a";
 const IRIS_GLOSS = 0.12;
 
 const MORPH_MAP: Record<string, (p: TwinParams) => number> = {
-  // Softer jaw: only engage when jaw is high (masculine square)
   Jaw_Lower: (p) => Math.max(0, (p.jaw - 0.55) * 0.35),
   Lips_Up_Funnel: (p) => Math.max(0, (p.lipFullness - 0.3) * 0.65),
   Smile_Lips_Closed: (p) => 0.08 + Math.max(0, (p.lipFullness - 0.35) * 0.4),
@@ -49,11 +49,48 @@ function applyMorphs(root: THREE.Object3D, params: TwinParams) {
   });
 }
 
-/** Prettier feminine face: MeshPhysical skin, warm lips, glossy iris */
-function paintHead(root: THREE.Object3D, params: TwinParams) {
+
+/** Soft skin tint multiply — keeps albedo detail, shifts tone/undertone. */
+function skinTintColor(params: TwinParams): THREE.Color {
   const skin = skinColorFromParams(params.skinTone, params.undertone);
+  const c = new THREE.Color(skin);
+  // Pull toward mid-gray so map detail remains; freckles slightly darken
+  c.lerp(new THREE.Color("#e8c4b0"), 0.35);
+  c.offsetHSL(0.005, 0.02, -params.freckles * 0.06);
+  return c;
+}
+
+function makeSkinPhysical(
+  map: THREE.Texture | null,
+  tint: THREE.Color,
+  params: TwinParams
+): THREE.MeshPhysicalMaterial {
   const gloss = 0.28 + params.gloss * 0.5;
-  const freckle = params.freckles * 0.07;
+  return new THREE.MeshPhysicalMaterial({
+    map: map ?? undefined,
+    color: map ? tint : new THREE.Color(skinColorFromParams(params.skinTone, params.undertone)),
+    roughness: Math.min(0.68, Math.max(0.32, 0.72 - gloss * 0.55)),
+    metalness: 0.0,
+    clearcoat: 0.08 + params.gloss * 0.18,
+    clearcoatRoughness: 0.42,
+    sheen: 0.42,
+    sheenRoughness: 0.5,
+    sheenColor: new THREE.Color("#f0c4b4"),
+    envMapIntensity: 0.55,
+    side: THREE.DoubleSide,
+  });
+}
+
+/**
+ * Photoreal head: keep high-res face albedo on skin; only override lips / eyes.
+ * Previously wiped maps with flat MeshPhysical colors — that killed photorealism.
+ */
+function paintHead(
+  root: THREE.Object3D,
+  params: TwinParams,
+  faceMap: THREE.Texture | null
+) {
+  const tint = skinTintColor(params);
 
   root.traverse((obj) => {
     const mesh = obj as THREE.Mesh;
@@ -88,45 +125,50 @@ function paintHead(root: THREE.Object3D, params: TwinParams) {
         color: params.irisColor,
         roughness: IRIS_GLOSS,
         metalness: 0.15,
-        clearcoat: 0.65,
-        clearcoatRoughness: 0.12,
-        sheen: 0.4,
+        clearcoat: 0.85,
+        clearcoatRoughness: 0.08,
+        sheen: 0.45,
         sheenColor: new THREE.Color(params.irisColor).offsetHSL(0, 0.1, 0.2),
-        envMapIntensity: 0.8,
+        envMapIntensity: 1.0,
         side: THREE.DoubleSide,
       });
     } else if (isSclera) {
       material = new THREE.MeshPhysicalMaterial({
-        color: "#f4f0ea",
-        roughness: 0.35,
+        color: "#f6f1ea",
+        roughness: 0.32,
         metalness: 0,
-        clearcoat: 0.25,
-        clearcoatRoughness: 0.3,
+        clearcoat: 0.3,
+        clearcoatRoughness: 0.28,
         side: THREE.DoubleSide,
       });
     } else if (isCornea) {
+      // Subtle cornea sheen (transmission-ish without breaking export)
       material = new THREE.MeshPhysicalMaterial({
         color: "#ffffff",
-        roughness: 0.08,
+        roughness: 0.05,
         metalness: 0,
-        transmission: 0.15,
-        thickness: 0.2,
+        transmission: 0.35,
+        thickness: 0.35,
+        ior: 1.4,
         transparent: true,
-        opacity: 0.35,
+        opacity: 0.28,
         clearcoat: 1,
-        clearcoatRoughness: 0.05,
+        clearcoatRoughness: 0.03,
+        envMapIntensity: 1.2,
         side: THREE.DoubleSide,
       });
     } else if (isMouth) {
+      const isTooth = n.includes("tooth") || n.includes("teeth");
+      const isGum = n.includes("gum");
       material = new THREE.MeshPhysicalMaterial({
-        color: LIP_COLOR,
-        roughness: 0.28,
+        color: isTooth ? "#f2eee6" : isGum ? "#c4787a" : LIP_COLOR,
+        roughness: isTooth ? 0.22 : 0.26,
         metalness: 0.02,
-        clearcoat: 0.45,
-        clearcoatRoughness: 0.2,
-        sheen: 0.6,
-        sheenColor: new THREE.Color("#e8909a"),
-        envMapIntensity: 0.55,
+        clearcoat: isTooth ? 0.55 : 0.55,
+        clearcoatRoughness: isTooth ? 0.15 : 0.18,
+        sheen: isTooth ? 0.15 : 0.7,
+        sheenColor: new THREE.Color(isTooth ? "#ffffff" : "#e8909a"),
+        envMapIntensity: 0.65,
         side: THREE.DoubleSide,
       });
     } else if (isShadow) {
@@ -141,32 +183,18 @@ function paintHead(root: THREE.Object3D, params: TwinParams) {
     } else if (isEyePart) {
       material = new THREE.MeshPhysicalMaterial({
         color: params.irisColor,
-        roughness: 0.2,
+        roughness: 0.18,
         metalness: 0.05,
-        clearcoat: 0.4,
+        clearcoat: 0.5,
         side: THREE.DoubleSide,
       });
     } else {
-      // Skin — soft feminine gloss
-      const c = new THREE.Color(skin);
-      c.offsetHSL(0.01, 0.04, -freckle);
-      material = new THREE.MeshPhysicalMaterial({
-        color: c,
-        roughness: Math.min(0.72, Math.max(0.28, 0.78 - gloss)),
-        metalness: 0.0,
-        clearcoat: 0.06 + params.gloss * 0.14,
-        clearcoatRoughness: 0.45,
-        sheen: 0.35,
-        sheenRoughness: 0.55,
-        sheenColor: new THREE.Color("#e8b4a8"),
-        envMapIntensity: 0.45,
-        side: THREE.DoubleSide,
-      });
+      // Skin — photoreal albedo + physical skin response
+      material = makeSkinPhysical(faceMap, tint, params);
     }
 
     mesh.material = material;
 
-    // Slightly larger eyes for feminine defaults
     if (n.includes("eye") && !isShadow) {
       const eyeS = 0.96 + params.eyeSize * 0.12;
       mesh.scale.setScalar(eyeS);
@@ -174,8 +202,14 @@ function paintHead(root: THREE.Object3D, params: TwinParams) {
   });
 }
 
-function tintBody(root: THREE.Object3D, params: TwinParams) {
-  const skin = skinColorFromParams(params.skinTone, params.undertone);
+function tintBody(
+  root: THREE.Object3D,
+  params: TwinParams,
+  bodyMap: THREE.Texture | null
+) {
+  const tint = skinTintColor(params);
+  const skinHex = skinColorFromParams(params.skinTone, params.undertone);
+
   root.traverse((obj) => {
     const mesh = obj as THREE.Mesh;
     if (!mesh.isMesh || !mesh.material) return;
@@ -188,25 +222,36 @@ function tintBody(root: THREE.Object3D, params: TwinParams) {
         continue;
       const name = `${mat.name || ""} ${mesh.name || ""}`.toLowerCase();
       if (name.includes("shirt") || name.includes("cloth")) {
-        // Fitted dark top — feminine casual
         mat.color.set("#121018");
-        mat.roughness = 0.62;
-        mat.metalness = 0.04;
-        if ("sheen" in mat) {
-          (mat as THREE.MeshPhysicalMaterial).sheen = 0.25;
-          (mat as THREE.MeshPhysicalMaterial).sheenColor = new THREE.Color("#3a3048");
+        mat.roughness = 0.58;
+        mat.metalness = 0.05;
+        if (mat instanceof THREE.MeshPhysicalMaterial) {
+          mat.sheen = 0.3;
+          mat.sheenColor = new THREE.Color("#3a3048");
         }
       } else if (name.includes("pant")) {
-        // Slim dark jeans
         mat.color.set("#1c2736");
-        mat.roughness = 0.78;
+        mat.roughness = 0.76;
         mat.metalness = 0.02;
       } else if (name.includes("shoe")) {
         mat.color.set("#0a0a0c");
-        mat.roughness = 0.55;
-      } else if (!mat.map) {
-        mat.color.set(skin);
-        mat.roughness = Math.min(0.85, Math.max(0.35, 0.75 - params.gloss * 0.3));
+        mat.roughness = 0.5;
+      } else {
+        // Skin / body — apply high-res albedo, tint via color multiply
+        if (bodyMap) {
+          mat.map = bodyMap;
+        }
+        mat.color.copy(bodyMap ? tint : new THREE.Color(skinHex));
+        mat.roughness = Math.min(0.78, Math.max(0.38, 0.7 - params.gloss * 0.28));
+        mat.metalness = 0;
+        if (mat instanceof THREE.MeshPhysicalMaterial) {
+          mat.clearcoat = 0.06 + params.gloss * 0.12;
+          mat.clearcoatRoughness = 0.48;
+          mat.sheen = 0.32;
+          mat.sheenRoughness = 0.55;
+          mat.sheenColor = new THREE.Color("#e8b4a8");
+          mat.envMapIntensity = 0.5;
+        }
       }
       mat.needsUpdate = true;
     }
@@ -223,7 +268,6 @@ function safeClone(scene: THREE.Object3D) {
   }
 }
 
-/** Resolve Mixamo bone whether named with or without colon. */
 function findBone(root: THREE.Object3D, base: string): THREE.Object3D | null {
   return (
     root.getObjectByName(`mixamorig:${base}`) ||
@@ -255,7 +299,6 @@ function setBoneScale(
 
 let loggedMixamoBones = false;
 
-/** One-shot bone dump so we know exact Mixamo names in vitruvian_body.glb. */
 function logMixamoBonesOnce(root: THREE.Object3D) {
   if (loggedMixamoBones) return;
   loggedMixamoBones = true;
@@ -268,42 +311,31 @@ function logMixamoBonesOnce(root: THREE.Object3D) {
   console.info("[Muse] Mixamo bones", names);
 }
 
-/**
- * Feminine silhouette — avoid Neck / aggressive Spine scales (they tilt Head).
- * Prefer shoulders/arms narrower, hips/uplegs wider in X, mild Spine2 chest,
- * plus clothing mesh scale for a visible hourglass when skinning is subtle.
- */
 function applyFeminineSilhouette(root: THREE.Object3D, p: TwinParams) {
   logMixamoBonesOnce(root);
 
-  // Narrower shoulders
   const sh = 0.7 + p.shoulders * 0.2;
   setBoneScale(root, "LeftShoulder", sh, 1, sh * 0.95);
   setBoneScale(root, "RightShoulder", sh, 1, sh * 0.95);
 
-  // Mild chest via Spine2 only (uniform-ish X/Z; keep Y=1 so head chain stays upright)
   const chest = 1.0 + p.chest * 0.2;
   setBoneScale(root, "Spine2", chest * 0.98, 1.0, 0.95 + p.chest * 0.18);
 
-  // Soft waist on Spine1 only — do NOT scale Spine or Neck (tilts Head)
   const waist = 0.84 + p.waist * 0.16;
   setBoneScale(root, "Spine1", waist, 1, waist * 0.98);
 
-  // Wider hips + thighs in X
   const hips = 1.1 + p.hips * 0.28;
   setBoneScale(root, "Hips", hips, 1, 0.96 + p.hips * 0.1);
   const thigh = 1.08 + p.hips * 0.16;
   setBoneScale(root, "LeftUpLeg", thigh, 1, 0.98 + p.hips * 0.1);
   setBoneScale(root, "RightUpLeg", thigh, 1, 0.98 + p.hips * 0.1);
 
-  // Slimmer arms
   const arms = 0.76 + p.arms * 0.18;
   setBoneScale(root, "LeftArm", arms, 1, arms);
   setBoneScale(root, "RightArm", arms, 1, arms);
   setBoneScale(root, "LeftForeArm", arms * 0.96, 1, arms * 0.96);
   setBoneScale(root, "RightForeArm", arms * 0.96, 1, arms * 0.96);
 
-  // Slightly longer / modelesque legs
   const legs = 0.98 + p.legs * 0.08;
   setBoneScale(root, "LeftLeg", 1, legs, 1);
   setBoneScale(root, "RightLeg", 1, legs, 1);
@@ -311,14 +343,12 @@ function applyFeminineSilhouette(root: THREE.Object3D, p: TwinParams) {
   applyFeminineClothingScale(root, p);
 }
 
-/** Visible hourglass on clothing meshes (bones alone look too masculine). */
 function applyFeminineClothingScale(root: THREE.Object3D, p: TwinParams) {
   root.traverse((obj) => {
     const mesh = obj as THREE.Mesh;
     if (!mesh.isMesh) return;
     const n = mesh.name.toLowerCase();
     if (n === "shirt") {
-      // Fitted top: narrower + slightly deeper chest
       mesh.scale.set(
         0.86 + p.waist * 0.1 + p.shoulders * 0.04,
         1.0,
@@ -330,7 +360,6 @@ function applyFeminineClothingScale(root: THREE.Object3D, p: TwinParams) {
   });
 }
 
-/** Place head so its bounding-box center sits just above the neck bone. */
 function seatHeadOnBone(bone: THREE.Object3D, head: THREE.Object3D) {
   if (head.parent) head.parent.remove(head);
 
@@ -372,10 +401,6 @@ function seatHeadOnBone(bone: THREE.Object3D, head: THREE.Object3D) {
   });
 }
 
-/**
- * Top-center of the seated head bbox in head-local space (actual scalp).
- * After seatHeadOnBone the skull meshes are far from local (0,0,0).
- */
 function getScalpLocalOffset(head: THREE.Object3D): THREE.Vector3 {
   head.updateWorldMatrix(true, true);
   const box = new THREE.Box3().setFromObject(head);
@@ -383,7 +408,6 @@ function getScalpLocalOffset(head: THREE.Object3D): THREE.Vector3 {
 
   const size = new THREE.Vector3();
   box.getSize(size);
-  // Top center, slightly inset so the crown sphere sits ON the skull
   const topWorld = new THREE.Vector3(
     (box.min.x + box.max.x) * 0.5,
     box.max.y - size.y * 0.04,
@@ -393,7 +417,6 @@ function getScalpLocalOffset(head: THREE.Object3D): THREE.Vector3 {
   return topWorld.applyMatrix4(inv);
 }
 
-/** Ensure MuseHairAnchor exists under head at the scalp point. */
 function ensureHairAnchor(head: THREE.Object3D): THREE.Object3D {
   const existing = head.getObjectByName("MuseHairAnchor");
   if (existing) head.remove(existing);
@@ -411,7 +434,12 @@ function TwinRig() {
   const wrap = useRef<THREE.Group>(null);
   const bodyRef = useRef<THREE.Group>(null);
   const [hairHost, setHairHost] = useState<THREE.Object3D | null>(null);
+  const [maps, setMaps] = useState<{
+    face: THREE.Texture | null;
+    body: THREE.Texture | null;
+  }>({ face: null, body: null });
   const params = useTwinStore((s) => s.params);
+  const gl = useThree((s) => s.gl);
 
   const bodyGltf = useGLTF("/models/vitruvian_body.glb");
   const headGltf = useGLTF("/models/vitruvian_head.glb");
@@ -420,6 +448,19 @@ function TwinRig() {
   const head = useMemo(() => headGltf.scene.clone(true), [headGltf.scene]);
 
   const { actions, names } = useAnimations(bodyGltf.animations, bodyRef);
+
+  // Load photoreal albedo maps once; share across skinned clones
+  useEffect(() => {
+    let alive = true;
+    const aniso = Math.min(16, gl.capabilities.getMaxAnisotropy());
+    loadSkinTextures(aniso).then(([face, bodyTex]) => {
+      if (!alive) return;
+      setMaps({ face, body: bodyTex });
+    });
+    return () => {
+      alive = false;
+    };
+  }, [gl]);
 
   useLayoutEffect(() => {
     const bone = findHeadBone(body);
@@ -431,12 +472,11 @@ function TwinRig() {
 
     seatHeadOnBone(bone, head);
     const p0 = useTwinStore.getState().params;
-    paintHead(head, p0);
-    tintBody(body, p0);
+    paintHead(head, p0, maps.face);
+    tintBody(body, p0, maps.body);
     applyMorphs(head, p0);
     applyFeminineSilhouette(body, p0);
 
-    // Hair on scalp: portal into MuseHairAnchor (not head local origin — skull is offset)
     const anchor = ensureHairAnchor(head);
     setHairHost(anchor);
 
@@ -450,6 +490,13 @@ function TwinRig() {
       bone.remove(head);
     };
   }, [body, head]);
+
+  // Re-paint when textures arrive (first load) without reseating head
+  useEffect(() => {
+    if (!maps.face && !maps.body) return;
+    paintHead(head, useTwinStore.getState().params, maps.face);
+    tintBody(body, useTwinStore.getState().params, maps.body);
+  }, [maps.face, maps.body, head, body]);
 
   useEffect(() => {
     try {
@@ -471,13 +518,12 @@ function TwinRig() {
   }, [actions, names, params.posePreset]);
 
   useEffect(() => {
-    paintHead(head, params);
-    tintBody(body, params);
+    paintHead(head, params, maps.face);
+    tintBody(body, params, maps.body);
     applyMorphs(head, params);
     applyFeminineSilhouette(body, params);
 
     const base = (head.userData.baseScale as number[] | undefined) || [1, 1, 1];
-    // Soften face scale defaults — slightly narrower + higher cheek presence
     const fw =
       0.88 + params.faceWidth * 0.1 + (params.cheekbones - 0.5) * 0.05;
     const fh =
@@ -493,6 +539,8 @@ function TwinRig() {
   }, [
     body,
     head,
+    maps.face,
+    maps.body,
     params.skinTone,
     params.undertone,
     params.freckles,
@@ -520,7 +568,6 @@ function TwinRig() {
   useFrame(() => {
     if (!wrap.current) return;
     const p = useTwinStore.getState().params;
-    // Slightly modelesque overall scale
     wrap.current.scale.setScalar(0.93 + p.height * 0.12);
   });
 

@@ -2,7 +2,7 @@ import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
   reactStrictMode: true,
-  transpilePackages: ["three", "@react-three/fiber", "@react-three/drei"],
+  transpilePackages: ["three", "@react-three/fiber", "@react-three/drei", "@react-three/postprocessing", "postprocessing", "n8ao"],
   webpack: (config) => {
     config.externals = [...(config.externals || []), { canvas: "canvas" }];
     return config;
