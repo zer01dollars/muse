@@ -1,0 +1,2 @@
+Vitruvian head/body GLBs are CC0 (public domain) assets derived from the
+Vitruvian / CharMorph / Antonia Polygon lineage (see VitruvianGodot / CharMorph-Vitruvian).
