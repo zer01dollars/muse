@@ -65,17 +65,24 @@ export function ProceduralHair({ style, length, color, volume }: Props) {
         { x: 0.035, y: -0.1, z: -0.06, sx: 0.55, sy: 1.15, sz: 0.4, rx: 0.34 },
       ];
 
+  // Parent MuseHairAnchor is already at scalp top — keep group near origin
+  // so the crown hemisphere cups the skull instead of floating away.
   return (
-    <group ref={group} position={[0, 0.08, 0.01]} name="MuseProceduralHair">
-      {/* scalp / crown volume */}
-      <mesh castShadow position={[0, 0.04, -0.015]} scale={[1.12 * vol, 1.02, 1.18 * vol]}>
-        <sphereGeometry args={[0.112, 36, 28, 0, Math.PI * 2, 0, Math.PI * 0.58]} />
+    <group ref={group} position={[0, -0.02, 0.01]} name="MuseProceduralHair">
+      {/* scalp / crown volume — sits ON the scalp */}
+      <mesh castShadow position={[0, 0.01, -0.01]} scale={[1.18 * vol, 1.05, 1.22 * vol]}>
+        <sphereGeometry args={[0.118, 36, 28, 0, Math.PI * 2, 0, Math.PI * 0.62]} />
         <primitive object={mats} attach="material" />
+      </mesh>
+      {/* under-crown fill so bald skull never shows */}
+      <mesh castShadow position={[0, -0.02, -0.005]} scale={[1.08 * vol, 0.7, 1.1 * vol]}>
+        <sphereGeometry args={[0.11, 28, 20, 0, Math.PI * 2, 0, Math.PI * 0.55]} />
+        <primitive object={mats.clone()} attach="material" />
       </mesh>
       {/* fringe / bangs soft layer */}
       <mesh
         castShadow
-        position={[0, 0.02, 0.08]}
+        position={[0, -0.01, 0.085]}
         rotation={[0.55, 0, 0]}
         scale={[0.95 * vol, 0.35 + volume * 0.15, 0.45]}
       >
@@ -141,7 +148,7 @@ export function ProceduralHair({ style, length, color, volume }: Props) {
 
       {style === "bun" && (
         <>
-          <mesh castShadow position={[0, 0.14, -0.05]} scale={[vol, vol, vol]}>
+          <mesh castShadow position={[0, 0.12, -0.05]} scale={[vol, vol, vol]}>
             <sphereGeometry args={[0.075 + length * 0.03, 24, 20]} />
             <primitive object={mats.clone()} attach="material" />
           </mesh>

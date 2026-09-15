@@ -20,10 +20,10 @@ const IRIS_GLOSS = 0.12;
 
 const MORPH_MAP: Record<string, (p: TwinParams) => number> = {
   // Softer jaw: only engage when jaw is high (masculine square)
-  Jaw_Lower: (p) => Math.max(0, (p.jaw - 0.55) * 0.4),
-  Lips_Up_Funnel: (p) => Math.max(0, (p.lipFullness - 0.35) * 0.55),
-  Smile_Lips_Closed: (p) => 0.06 + Math.max(0, (p.lipFullness - 0.4) * 0.35),
-  Kiss: (p) => Math.max(0, (p.lipFullness - 0.55) * 0.45),
+  Jaw_Lower: (p) => Math.max(0, (p.jaw - 0.55) * 0.35),
+  Lips_Up_Funnel: (p) => Math.max(0, (p.lipFullness - 0.3) * 0.65),
+  Smile_Lips_Closed: (p) => 0.08 + Math.max(0, (p.lipFullness - 0.35) * 0.4),
+  Kiss: (p) => Math.max(0, (p.lipFullness - 0.5) * 0.5),
   Eyebrows_Raised_Left: (p) => Math.max(0, (p.brow - 0.5) * 0.55),
   Eyebrows_Raised_Right: (p) => Math.max(0, (p.brow - 0.5) * 0.55),
   Eyebrows_Frown_Left: (p) => Math.max(0, (0.5 - p.brow) * 0.4),
@@ -253,47 +253,81 @@ function setBoneScale(
   );
 }
 
+let loggedMixamoBones = false;
+
+/** One-shot bone dump so we know exact Mixamo names in vitruvian_body.glb. */
+function logMixamoBonesOnce(root: THREE.Object3D) {
+  if (loggedMixamoBones) return;
+  loggedMixamoBones = true;
+  const names: string[] = [];
+  root.traverse((o) => {
+    if ((o as THREE.Bone).isBone || o.type === "Bone" || /^mixamorig/i.test(o.name)) {
+      names.push(o.name);
+    }
+  });
+  console.info("[Muse] Mixamo bones", names);
+}
+
 /**
- * Feminine silhouette via Mixamo bone scales.
- * Strong feminine bias + twin params (chest/waist/hips/shoulders/arms).
+ * Feminine silhouette — avoid Neck / aggressive Spine scales (they tilt Head).
+ * Prefer shoulders/arms narrower, hips/uplegs wider in X, mild Spine2 chest,
+ * plus clothing mesh scale for a visible hourglass when skinning is subtle.
  */
 function applyFeminineSilhouette(root: THREE.Object3D, p: TwinParams) {
+  logMixamoBonesOnce(root);
+
   // Narrower shoulders
-  const sh = 0.78 + p.shoulders * 0.22;
-  setBoneScale(root, "LeftShoulder", sh, 1, sh * 0.98);
-  setBoneScale(root, "RightShoulder", sh, 1, sh * 0.98);
+  const sh = 0.7 + p.shoulders * 0.2;
+  setBoneScale(root, "LeftShoulder", sh, 1, sh * 0.95);
+  setBoneScale(root, "RightShoulder", sh, 1, sh * 0.95);
 
-  // Fuller chest / breast area (Spine2)
-  const chest = 1.0 + p.chest * 0.28;
-  setBoneScale(root, "Spine2", chest, 1.0 + p.chest * 0.06, 0.98 + p.chest * 0.18);
+  // Mild chest via Spine2 only (uniform-ish X/Z; keep Y=1 so head chain stays upright)
+  const chest = 1.0 + p.chest * 0.2;
+  setBoneScale(root, "Spine2", chest * 0.98, 1.0, 0.95 + p.chest * 0.18);
 
-  // Cinched waist (Spine + Spine1)
-  const waist = 0.76 + p.waist * 0.22;
-  setBoneScale(root, "Spine", waist, 1, waist * 0.96);
-  setBoneScale(root, "Spine1", waist * 1.02, 1, waist);
+  // Soft waist on Spine1 only — do NOT scale Spine or Neck (tilts Head)
+  const waist = 0.84 + p.waist * 0.16;
+  setBoneScale(root, "Spine1", waist, 1, waist * 0.98);
 
-  // Wider hips
-  const hips = 1.04 + p.hips * 0.26;
-  setBoneScale(root, "Hips", hips, 1, 0.98 + p.hips * 0.12);
-  const thigh = 1.02 + p.hips * 0.14;
-  setBoneScale(root, "LeftUpLeg", thigh, 1, 0.98 + p.hips * 0.08);
-  setBoneScale(root, "RightUpLeg", thigh, 1, 0.98 + p.hips * 0.08);
+  // Wider hips + thighs in X
+  const hips = 1.1 + p.hips * 0.28;
+  setBoneScale(root, "Hips", hips, 1, 0.96 + p.hips * 0.1);
+  const thigh = 1.08 + p.hips * 0.16;
+  setBoneScale(root, "LeftUpLeg", thigh, 1, 0.98 + p.hips * 0.1);
+  setBoneScale(root, "RightUpLeg", thigh, 1, 0.98 + p.hips * 0.1);
 
-  // Softer, slimmer arms
-  const arms = 0.82 + p.arms * 0.2;
+  // Slimmer arms
+  const arms = 0.76 + p.arms * 0.18;
   setBoneScale(root, "LeftArm", arms, 1, arms);
   setBoneScale(root, "RightArm", arms, 1, arms);
-  setBoneScale(root, "LeftForeArm", arms * 0.98, 1, arms * 0.98);
-  setBoneScale(root, "RightForeArm", arms * 0.98, 1, arms * 0.98);
+  setBoneScale(root, "LeftForeArm", arms * 0.96, 1, arms * 0.96);
+  setBoneScale(root, "RightForeArm", arms * 0.96, 1, arms * 0.96);
 
   // Slightly longer / modelesque legs
   const legs = 0.98 + p.legs * 0.08;
   setBoneScale(root, "LeftLeg", 1, legs, 1);
   setBoneScale(root, "RightLeg", 1, legs, 1);
 
-  // Soften upper torso width a touch when muscle is low
-  const soft = 1 - p.muscle * 0.08;
-  setBoneScale(root, "Neck", soft, 1, soft);
+  applyFeminineClothingScale(root, p);
+}
+
+/** Visible hourglass on clothing meshes (bones alone look too masculine). */
+function applyFeminineClothingScale(root: THREE.Object3D, p: TwinParams) {
+  root.traverse((obj) => {
+    const mesh = obj as THREE.Mesh;
+    if (!mesh.isMesh) return;
+    const n = mesh.name.toLowerCase();
+    if (n === "shirt") {
+      // Fitted top: narrower + slightly deeper chest
+      mesh.scale.set(
+        0.86 + p.waist * 0.1 + p.shoulders * 0.04,
+        1.0,
+        0.9 + p.chest * 0.1
+      );
+    } else if (n === "pants") {
+      mesh.scale.set(1.04 + p.hips * 0.14, 1.0, 1.02 + p.hips * 0.08);
+    }
+  });
 }
 
 /** Place head so its bounding-box center sits just above the neck bone. */
@@ -338,6 +372,41 @@ function seatHeadOnBone(bone: THREE.Object3D, head: THREE.Object3D) {
   });
 }
 
+/**
+ * Top-center of the seated head bbox in head-local space (actual scalp).
+ * After seatHeadOnBone the skull meshes are far from local (0,0,0).
+ */
+function getScalpLocalOffset(head: THREE.Object3D): THREE.Vector3 {
+  head.updateWorldMatrix(true, true);
+  const box = new THREE.Box3().setFromObject(head);
+  if (box.isEmpty()) return new THREE.Vector3(0, 0.2, 0);
+
+  const size = new THREE.Vector3();
+  box.getSize(size);
+  // Top center, slightly inset so the crown sphere sits ON the skull
+  const topWorld = new THREE.Vector3(
+    (box.min.x + box.max.x) * 0.5,
+    box.max.y - size.y * 0.04,
+    (box.min.z + box.max.z) * 0.5
+  );
+  const inv = new THREE.Matrix4().copy(head.matrixWorld).invert();
+  return topWorld.applyMatrix4(inv);
+}
+
+/** Ensure MuseHairAnchor exists under head at the scalp point. */
+function ensureHairAnchor(head: THREE.Object3D): THREE.Object3D {
+  const existing = head.getObjectByName("MuseHairAnchor");
+  if (existing) head.remove(existing);
+
+  const anchor = new THREE.Group();
+  anchor.name = "MuseHairAnchor";
+  const scalp = getScalpLocalOffset(head);
+  anchor.position.copy(scalp);
+  head.add(anchor);
+  console.info("[Muse] hair anchor at scalp", scalp.toArray());
+  return anchor;
+}
+
 function TwinRig() {
   const wrap = useRef<THREE.Group>(null);
   const bodyRef = useRef<THREE.Group>(null);
@@ -367,14 +436,17 @@ function TwinRig() {
     applyMorphs(head, p0);
     applyFeminineSilhouette(body, p0);
 
-    // Hair parents under seated head (follows Head bone; avoids React primitive reparent)
-    setHairHost(head);
+    // Hair on scalp: portal into MuseHairAnchor (not head local origin — skull is offset)
+    const anchor = ensureHairAnchor(head);
+    setHairHost(anchor);
 
     const old = bone.getObjectByName("MuseHeadMarker");
     if (old) bone.remove(old);
 
     return () => {
       setHairHost(null);
+      const a = head.getObjectByName("MuseHairAnchor");
+      if (a) head.remove(a);
       bone.remove(head);
     };
   }, [body, head]);
@@ -407,15 +479,15 @@ function TwinRig() {
     const base = (head.userData.baseScale as number[] | undefined) || [1, 1, 1];
     // Soften face scale defaults — slightly narrower + higher cheek presence
     const fw =
-      0.9 + params.faceWidth * 0.1 + (params.cheekbones - 0.5) * 0.06;
+      0.88 + params.faceWidth * 0.1 + (params.cheekbones - 0.5) * 0.05;
     const fh =
-      0.94 +
-      (params.chin - 0.5) * 0.05 +
-      (params.jaw - 0.5) * 0.035 -
-      (params.cheekbones - 0.5) * 0.02;
+      0.93 +
+      (params.chin - 0.5) * 0.045 +
+      (params.jaw - 0.5) * 0.03 -
+      (params.cheekbones - 0.5) * 0.025;
     const fd =
-      0.96 +
-      (params.noseLength - 0.5) * 0.045 +
+      0.95 +
+      (params.noseLength - 0.5) * 0.04 +
       (params.cheekbones - 0.5) * 0.03;
     head.scale.set(base[0] * fw, base[1] * fh, base[2] * fd);
   }, [
