@@ -13,7 +13,6 @@ import {
 import { ProceduralHair } from "./ProceduralHair";
 
 useGLTF.preload("/models/vitruvian_body.glb");
-useGLTF.preload("/models/vitruvian_head.glb");
 
 const MORPH_MAP: Record<string, (p: TwinParams) => number> = {
   Jaw_Lower: (p) => Math.max(0, (p.jaw - 0.5) * 0.35),
@@ -85,7 +84,7 @@ function tintMaterials(root: THREE.Object3D, params: TwinParams) {
         }
         mat.needsUpdate = true;
       } catch {
-        /* ignore bad materials */
+        /* ignore */
       }
     }
     mesh.castShadow = true;
@@ -101,7 +100,14 @@ function setBoneScale(
   sz: number
 ) {
   const bone = root.getObjectByName(name);
-  if (bone) bone.scale.set(sx, sy, sz);
+  // Clamp hard — extreme scales explode Mixamo skinning into blobs
+  if (bone) {
+    bone.scale.set(
+      THREE.MathUtils.clamp(sx, 0.75, 1.35),
+      THREE.MathUtils.clamp(sy, 0.75, 1.35),
+      THREE.MathUtils.clamp(sz, 0.75, 1.35)
+    );
+  }
 }
 
 function setBoneRot(
@@ -143,14 +149,9 @@ function safeClone(scene: THREE.Object3D) {
   }
 }
 
-function BodyModel({
-  headAnchor,
-  hideBodyHead,
-}: {
-  headAnchor: React.RefObject<THREE.Group | null>;
-  hideBodyHead: boolean;
-}) {
+function BodyModel() {
   const group = useRef<THREE.Group>(null);
+  const hairAnchor = useRef<THREE.Group>(null);
   const params = useTwinStore((s) => s.params);
   const { scene, animations } = useGLTF("/models/vitruvian_body.glb");
   const cloned = useMemo(() => safeClone(scene), [scene]);
@@ -171,7 +172,7 @@ function BodyModel({
         actions[preferred].setLoop(THREE.LoopRepeat, Infinity);
       }
     } catch {
-      /* animations optional */
+      /* optional */
     }
   }, [actions, names, params.posePreset]);
 
@@ -180,132 +181,87 @@ function BodyModel({
     const p = useTwinStore.getState().params;
     const root = group.current;
 
-    const h = 0.88 + p.height * 0.28;
+    // Overall height only — avoid cascading bone scale explosions
+    const h = 0.92 + p.height * 0.16;
     root.scale.setScalar(h);
 
-    const sh = 0.85 + p.shoulders * 0.4;
+    // Gentle regional tweaks (clamped in setBoneScale)
+    const sh = 0.92 + p.shoulders * 0.16;
     setBoneScale(root, "mixamorig:LeftShoulder", sh, 1, sh);
     setBoneScale(root, "mixamorig:RightShoulder", sh, 1, sh);
 
-    const chest = 0.9 + p.chest * 0.3 + p.muscle * 0.12;
-    setBoneScale(root, "mixamorig:Spine2", chest, 1, 0.92 + p.chest * 0.2);
-    setBoneScale(root, "mixamorig:Spine1", 0.95 + p.chest * 0.15, 1, 0.95);
+    const chest = 0.94 + p.chest * 0.12 + p.muscle * 0.06;
+    setBoneScale(root, "mixamorig:Spine2", chest, 1, 0.96 + p.chest * 0.08);
 
-    const waist = 0.85 + p.waist * 0.35;
-    setBoneScale(root, "mixamorig:Spine", waist, 1, waist * 0.95);
+    const waist = 0.92 + p.waist * 0.14;
+    setBoneScale(root, "mixamorig:Spine", waist, 1, waist);
 
-    const hips = 0.88 + p.hips * 0.35;
-    setBoneScale(root, "mixamorig:Hips", hips, 1, hips * 0.95);
+    // Face width via head bone (subtle)
+    const fw = 0.94 + p.faceWidth * 0.12;
+    const fh = 0.96 + (p.chin - 0.5) * 0.06 + (p.jaw - 0.5) * 0.04;
+    setBoneScale(root, "mixamorig:Head", fw, fh, 0.98 + (p.noseLength - 0.5) * 0.04);
 
-    const arms = 0.88 + p.arms * 0.3 + p.muscle * 0.1;
-    setBoneScale(root, "mixamorig:LeftArm", 1, arms, arms);
-    setBoneScale(root, "mixamorig:RightArm", 1, arms, arms);
-    setBoneScale(root, "mixamorig:LeftForeArm", 1, arms * 0.95, arms * 0.95);
-    setBoneScale(root, "mixamorig:RightForeArm", 1, arms * 0.95, arms * 0.95);
-
-    const legs = 0.9 + p.legs * 0.28 + p.muscle * 0.08;
-    setBoneScale(root, "mixamorig:LeftUpLeg", legs, 1, legs);
-    setBoneScale(root, "mixamorig:RightUpLeg", legs, 1, legs);
-    setBoneScale(root, "mixamorig:LeftLeg", legs * 0.98, 1, legs * 0.98);
-    setBoneScale(root, "mixamorig:RightLeg", legs * 0.98, 1, legs * 0.98);
-
-    // Only shrink body head when morph head is active
-    if (hideBodyHead) {
-      setBoneScale(root, "mixamorig:Head", 0.001, 0.001, 0.001);
-    } else {
-      setBoneScale(root, "mixamorig:Head", 1, 1, 1);
-    }
-
-    const lean = p.torsoLean * 0.4;
+    const lean = p.torsoLean * 0.25;
     setBoneRot(root, "mixamorig:Spine1", lean, 0, 0);
 
     if (p.posePreset !== "Wave") {
       setBoneRot(
         root,
         "mixamorig:LeftArm",
-        0.15 + p.armL * 0.9,
+        0.1 + p.armL * 0.6,
         0,
-        0.2 + p.armL * 0.5
+        0.15 + p.armL * 0.35
       );
       setBoneRot(
         root,
         "mixamorig:RightArm",
-        0.15 + p.armR * 0.9,
+        0.1 + p.armR * 0.6,
         0,
-        -0.2 - p.armR * 0.5
+        -0.15 - p.armR * 0.35
       );
     }
 
+    applyMorphs(root, p);
     tintMaterials(root, p);
 
     const headBone = root.getObjectByName("mixamorig:Head");
-    if (headBone && headAnchor.current) {
-      headBone.getWorldPosition(headAnchor.current.position);
-      headBone.getWorldQuaternion(headAnchor.current.quaternion);
+    if (headBone && hairAnchor.current) {
+      headBone.getWorldPosition(hairAnchor.current.position);
+      headBone.getWorldQuaternion(hairAnchor.current.quaternion);
       const parentScale = new THREE.Vector3();
       root.getWorldScale(parentScale);
       const inv = 1 / Math.max(parentScale.x, 1e-4);
-      headAnchor.current.scale.set(inv, inv, inv);
+      hairAnchor.current.scale.set(inv, inv, inv);
     }
   });
 
-  return (
-    <group ref={group} dispose={null} position={[0, 0, 0]}>
-      <primitive object={cloned} />
-    </group>
-  );
-}
-
-function MorphHead() {
-  const group = useRef<THREE.Group>(null);
   const hairStyle = useTwinStore((s) => s.params.hairStyle);
   const hairLength = useTwinStore((s) => s.params.hairLength);
   const hairColor = useTwinStore((s) => s.params.hairColor);
   const hairVolume = useTwinStore((s) => s.params.hairVolume);
-  const { scene } = useGLTF("/models/vitruvian_head.glb");
-  const cloned = useMemo(() => safeClone(scene), [scene]);
-
-  useFrame(() => {
-    if (!group.current) return;
-    const p = useTwinStore.getState().params;
-    applyMorphs(group.current, p);
-    tintMaterials(group.current, p);
-    const fw = 0.94 + p.faceWidth * 0.18;
-    group.current.scale.set(
-      fw * (0.97 + p.cheekbones * 0.08),
-      0.96 + (p.chin - 0.5) * 0.12 + (p.jaw - 0.5) * 0.08,
-      0.98 + (p.noseLength - 0.5) * 0.1 + (p.noseWidth - 0.5) * 0.06
-    );
-  });
 
   return (
-    <group ref={group} position={[0, 0.02, 0.01]}>
-      <primitive object={cloned} />
-      <ProceduralHair
-        style={hairStyle}
-        length={hairLength}
-        color={hairColor}
-        volume={hairVolume}
-      />
-    </group>
+    <>
+      <group ref={group} dispose={null}>
+        <primitive object={cloned} />
+      </group>
+      <group ref={hairAnchor}>
+        <ProceduralHair
+          style={hairStyle}
+          length={hairLength}
+          color={hairColor}
+          volume={hairVolume}
+        />
+      </group>
+    </>
   );
 }
 
-/** Body-only twin — always works; morph head is layered when available */
 export function TwinAvatar() {
   const rotateY = useTwinStore((s) => s.params.rotateY);
-  const headAnchor = useRef<THREE.Group>(null);
-  // Use morph head only after body is up; keep body head if morph fails via flag
-  const useMorphHead = true;
-
   return (
-    <group rotation={[0, rotateY, 0]} position={[0, -0.05, 0]}>
-      <BodyModel headAnchor={headAnchor} hideBodyHead={useMorphHead} />
-      {useMorphHead && (
-        <group ref={headAnchor}>
-          <MorphHead />
-        </group>
-      )}
+    <group rotation={[0, rotateY, 0]} position={[0, 0, 0]}>
+      <BodyModel />
     </group>
   );
 }
