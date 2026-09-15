@@ -2,7 +2,8 @@
 
 import { useEffect, useMemo, useRef } from "react";
 import { useFrame } from "@react-three/fiber";
-import { useGLTF, useAnimations } from "@react-three/drei";
+import { useGLTF, useAnimations, Html } from "@react-three/drei";
+import * as SkeletonUtils from "three/examples/jsm/utils/SkeletonUtils.js";
 import * as THREE from "three";
 import {
   skinColorFromParams,
@@ -29,9 +30,9 @@ const MORPH_MAP: Record<string, (p: TwinParams) => number> = {
   Happy: () => 0.04,
 };
 
-function applySkinMaterial(root: THREE.Object3D, params: TwinParams) {
-  const skin = skinColorFromParams(params.skinTone, params.undertone);
-  const skinColor = new THREE.Color(skin);
+function tintMaterials(root: THREE.Object3D, params: TwinParams) {
+  const skinHex = skinColorFromParams(params.skinTone, params.undertone);
+  const skinColor = new THREE.Color(skinHex);
   const gloss = 0.25 + params.gloss * 0.45;
   const freckleDarken = params.freckles * 0.08;
 
@@ -39,12 +40,12 @@ function applySkinMaterial(root: THREE.Object3D, params: TwinParams) {
     const mesh = obj as THREE.Mesh;
     if (!mesh.isMesh || !mesh.material) return;
     const mats = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
-    mats.forEach((mat) => {
+    for (const mat of mats) {
       if (
         !(mat instanceof THREE.MeshStandardMaterial) &&
         !(mat instanceof THREE.MeshPhysicalMaterial)
       ) {
-        return;
+        continue;
       }
       const name = `${mat.name || ""} ${mesh.name || ""}`.toLowerCase();
       const isCloth =
@@ -56,85 +57,39 @@ function applySkinMaterial(root: THREE.Object3D, params: TwinParams) {
         name.includes("eye") ||
         name.includes("iris") ||
         name.includes("sclera") ||
-        name.includes("cornea") ||
-        name.includes("eyeshadow");
+        name.includes("cornea");
       const isHair = name.includes("hair");
       const isMouth =
         name.includes("mouth") ||
         name.includes("tooth") ||
-        name.includes("gum") ||
-        name.includes("caruncle") ||
-        name.includes("tear");
+        name.includes("gum");
 
-      if (isCloth) {
-        mat.color.set("#1a1528");
-        mat.roughness = 0.75;
-        mat.metalness = 0.05;
-        return;
-      }
-      if (isEye) {
-        if (!name.includes("shadow") && !name.includes("lash")) {
-          mat.color.set(params.irisColor);
+      try {
+        if (isCloth) {
+          mat.color.set("#1a1528");
+          mat.roughness = 0.75;
+          mat.metalness = 0.05;
+        } else if (isEye) {
+          if (!name.includes("shadow") && !name.includes("lash")) {
+            mat.color.set(params.irisColor);
+          }
+          mat.roughness = 0.18;
+        } else if (isHair) {
+          mat.color.set(params.hairColor);
+        } else if (!isMouth) {
+          const c = skinColor.clone();
+          c.offsetHSL(0, 0, -freckleDarken);
+          mat.color.copy(c);
+          mat.roughness = Math.min(0.95, Math.max(0.25, 1 - gloss));
+          mat.metalness = 0.02;
         }
-        mat.roughness = 0.18;
-        if (mat instanceof THREE.MeshPhysicalMaterial) {
-          mat.clearcoat = 0.9;
-          mat.clearcoatRoughness = 0.12;
-        }
-        return;
+        mat.needsUpdate = true;
+      } catch {
+        /* ignore bad materials */
       }
-      if (isHair) {
-        mat.color.set(params.hairColor);
-        return;
-      }
-      if (isMouth) return;
-
-      const c = skinColor.clone();
-      c.offsetHSL(0, 0, -freckleDarken);
-      mat.color.copy(c);
-      mat.roughness = Math.min(0.95, Math.max(0.2, 1 - gloss));
-      mat.metalness = 0.02;
-      if (mat instanceof THREE.MeshPhysicalMaterial) {
-        mat.sheen = 0.55 + params.gloss * 0.3;
-        mat.sheenRoughness = 0.55;
-        mat.sheenColor = c.clone().offsetHSL(0.02, 0.1, 0.08);
-        mat.clearcoat = 0.08 + params.gloss * 0.12;
-        mat.clearcoatRoughness = 0.45;
-        mat.thickness = 0.4;
-        mat.attenuationColor = c.clone().offsetHSL(0.02, 0.15, 0.05);
-        mat.attenuationDistance = 0.45;
-      }
-      mat.needsUpdate = true;
-    });
-  });
-}
-
-function upgradeMaterials(root: THREE.Object3D) {
-  root.traverse((o) => {
-    const m = o as THREE.Mesh;
-    if (!m.isMesh || !m.material) return;
-    m.castShadow = true;
-    m.receiveShadow = true;
-    const upgrade = (mat: THREE.Material) => {
-      if (
-        mat instanceof THREE.MeshStandardMaterial &&
-        !(mat instanceof THREE.MeshPhysicalMaterial)
-      ) {
-        const phys = new THREE.MeshPhysicalMaterial();
-        phys.copy(mat);
-        phys.map = mat.map;
-        phys.normalMap = mat.normalMap;
-        phys.roughnessMap = mat.roughnessMap;
-        phys.metalnessMap = mat.metalnessMap;
-        phys.aoMap = mat.aoMap;
-        phys.envMapIntensity = 0.85;
-        return phys;
-      }
-      return mat;
-    };
-    m.material = Array.isArray(m.material)
-      ? m.material.map(upgrade)
-      : upgrade(m.material);
+    }
+    mesh.castShadow = true;
+    mesh.receiveShadow = true;
   });
 }
 
@@ -171,78 +126,52 @@ function applyMorphs(root: THREE.Object3D, params: TwinParams) {
       return;
     const dict = mesh.morphTargetDictionary;
     const influences = mesh.morphTargetInfluences;
-    Object.entries(MORPH_MAP).forEach(([key, fn]) => {
+    for (const [key, fn] of Object.entries(MORPH_MAP)) {
       const idx = dict[key];
       if (idx !== undefined) {
         influences[idx] = THREE.MathUtils.clamp(fn(params), 0, 1);
       }
-    });
+    }
   });
 }
 
-/** Deep clone preserving skeletons */
-function skeletonClone(source: THREE.Object3D) {
-  const clone = source.clone(true);
-  const sourceMeshes: THREE.SkinnedMesh[] = [];
-  const destMeshes: THREE.SkinnedMesh[] = [];
-  source.traverse((o) => {
-    if ((o as THREE.SkinnedMesh).isSkinnedMesh)
-      sourceMeshes.push(o as THREE.SkinnedMesh);
-  });
-  clone.traverse((o) => {
-    if ((o as THREE.SkinnedMesh).isSkinnedMesh)
-      destMeshes.push(o as THREE.SkinnedMesh);
-  });
-  for (let i = 0; i < sourceMeshes.length; i++) {
-    const src = sourceMeshes[i]!;
-    const dst = destMeshes[i]!;
-    if (!src.skeleton) continue;
-    const bones: THREE.Bone[] = [];
-    src.skeleton.bones.forEach((b) => {
-      const found = clone.getObjectByName(b.name);
-      if (found) bones.push(found as THREE.Bone);
-    });
-    dst.bind(
-      new THREE.Skeleton(
-        bones,
-        src.skeleton.boneInverses.map((m) => m.clone())
-      ),
-      dst.bindMatrix
-    );
-    if (src.morphTargetInfluences) {
-      dst.morphTargetInfluences = [...src.morphTargetInfluences];
-    }
-    if (src.morphTargetDictionary) {
-      dst.morphTargetDictionary = { ...src.morphTargetDictionary };
-    }
+function safeClone(scene: THREE.Object3D) {
+  try {
+    return SkeletonUtils.clone(scene);
+  } catch {
+    return scene.clone(true);
   }
-  return clone;
 }
 
-function BodyModel({ headAnchor }: { headAnchor: React.RefObject<THREE.Group | null> }) {
+function BodyModel({
+  headAnchor,
+  hideBodyHead,
+}: {
+  headAnchor: React.RefObject<THREE.Group | null>;
+  hideBodyHead: boolean;
+}) {
   const group = useRef<THREE.Group>(null);
   const params = useTwinStore((s) => s.params);
   const { scene, animations } = useGLTF("/models/vitruvian_body.glb");
-  const cloned = useMemo(() => {
-    const c = skeletonClone(scene);
-    upgradeMaterials(c);
-    return c;
-  }, [scene]);
-
+  const cloned = useMemo(() => safeClone(scene), [scene]);
   const { actions, names } = useAnimations(animations, group);
 
   useEffect(() => {
-    const preferred =
-      params.posePreset === "Wave"
-        ? names.find((n) => /wave/i.test(n))
-        : params.posePreset === "Confident"
-          ? names.find((n) => /happy|sway/i.test(n))
-          : names.find((n) => /^idle$/i.test(n)) ||
-            names.find((n) => /idle/i.test(n));
-    Object.values(actions).forEach((a) => a?.fadeOut(0.35));
-    if (preferred && actions[preferred]) {
-      actions[preferred].reset().fadeIn(0.4).play();
-      actions[preferred].setLoop(THREE.LoopRepeat, Infinity);
+    try {
+      const preferred =
+        params.posePreset === "Wave"
+          ? names.find((n) => /wave/i.test(n))
+          : params.posePreset === "Confident"
+            ? names.find((n) => /happy|sway/i.test(n))
+            : names.find((n) => /^idle$/i.test(n)) ||
+              names.find((n) => /idle/i.test(n));
+      Object.values(actions).forEach((a) => a?.fadeOut(0.25));
+      if (preferred && actions[preferred]) {
+        actions[preferred].reset().fadeIn(0.3).play();
+        actions[preferred].setLoop(THREE.LoopRepeat, Infinity);
+      }
+    } catch {
+      /* animations optional */
     }
   }, [actions, names, params.posePreset]);
 
@@ -280,8 +209,12 @@ function BodyModel({ headAnchor }: { headAnchor: React.RefObject<THREE.Group | n
     setBoneScale(root, "mixamorig:LeftLeg", legs * 0.98, 1, legs * 0.98);
     setBoneScale(root, "mixamorig:RightLeg", legs * 0.98, 1, legs * 0.98);
 
-    // Collapse body skull so Vitruvian morph head reads cleanly
-    setBoneScale(root, "mixamorig:Head", 0.02, 0.02, 0.02);
+    // Only shrink body head when morph head is active
+    if (hideBodyHead) {
+      setBoneScale(root, "mixamorig:Head", 0.001, 0.001, 0.001);
+    } else {
+      setBoneScale(root, "mixamorig:Head", 1, 1, 1);
+    }
 
     const lean = p.torsoLean * 0.4;
     setBoneRot(root, "mixamorig:Spine1", lean, 0, 0);
@@ -303,25 +236,21 @@ function BodyModel({ headAnchor }: { headAnchor: React.RefObject<THREE.Group | n
       );
     }
 
-    applySkinMaterial(root, p);
+    tintMaterials(root, p);
 
     const headBone = root.getObjectByName("mixamorig:Head");
     if (headBone && headAnchor.current) {
       headBone.getWorldPosition(headAnchor.current.position);
       headBone.getWorldQuaternion(headAnchor.current.quaternion);
-      // undo tiny head bone scale for our replacement head
       const parentScale = new THREE.Vector3();
       root.getWorldScale(parentScale);
-      headAnchor.current.scale.set(
-        1 / Math.max(parentScale.x, 1e-4),
-        1 / Math.max(parentScale.y, 1e-4),
-        1 / Math.max(parentScale.z, 1e-4)
-      );
+      const inv = 1 / Math.max(parentScale.x, 1e-4);
+      headAnchor.current.scale.set(inv, inv, inv);
     }
   });
 
   return (
-    <group ref={group} dispose={null}>
+    <group ref={group} dispose={null} position={[0, 0, 0]}>
       <primitive object={cloned} />
     </group>
   );
@@ -334,17 +263,13 @@ function MorphHead() {
   const hairColor = useTwinStore((s) => s.params.hairColor);
   const hairVolume = useTwinStore((s) => s.params.hairVolume);
   const { scene } = useGLTF("/models/vitruvian_head.glb");
-  const cloned = useMemo(() => {
-    const c = skeletonClone(scene);
-    upgradeMaterials(c);
-    return c;
-  }, [scene]);
+  const cloned = useMemo(() => safeClone(scene), [scene]);
 
   useFrame(() => {
     if (!group.current) return;
     const p = useTwinStore.getState().params;
     applyMorphs(group.current, p);
-    applySkinMaterial(group.current, p);
+    tintMaterials(group.current, p);
     const fw = 0.94 + p.faceWidth * 0.18;
     group.current.scale.set(
       fw * (0.97 + p.cheekbones * 0.08),
@@ -354,7 +279,7 @@ function MorphHead() {
   });
 
   return (
-    <group ref={group}>
+    <group ref={group} position={[0, 0.02, 0.01]}>
       <primitive object={cloned} />
       <ProceduralHair
         style={hairStyle}
@@ -366,47 +291,31 @@ function MorphHead() {
   );
 }
 
-function PlaceholderMannequin() {
+/** Body-only twin — always works; morph head is layered when available */
+export function TwinAvatar() {
+  const rotateY = useTwinStore((s) => s.params.rotateY);
+  const headAnchor = useRef<THREE.Group>(null);
+  // Use morph head only after body is up; keep body head if morph fails via flag
+  const useMorphHead = true;
+
   return (
-    <group>
-      <mesh castShadow position={[0, 0.95, 0]}>
-        <capsuleGeometry args={[0.22, 1.1, 8, 16]} />
-        <meshPhysicalMaterial
-          color="#2a2438"
-          roughness={0.35}
-          metalness={0.4}
-          clearcoat={0.5}
-        />
-      </mesh>
-      <mesh castShadow position={[0, 1.72, 0]}>
-        <sphereGeometry args={[0.16, 32, 32]} />
-        <meshPhysicalMaterial color="#3a3250" roughness={0.4} metalness={0.3} />
-      </mesh>
+    <group rotation={[0, rotateY, 0]} position={[0, -0.05, 0]}>
+      <BodyModel headAnchor={headAnchor} hideBodyHead={useMorphHead} />
+      {useMorphHead && (
+        <group ref={headAnchor}>
+          <MorphHead />
+        </group>
+      )}
     </group>
   );
 }
 
-export function TwinAvatar() {
-  const rotateY = useTwinStore((s) => s.params.rotateY);
-  const twinReady = useTwinStore((s) => s.twinReady);
-  const headAnchor = useRef<THREE.Group>(null);
-
-  if (!twinReady) {
-    return (
-      <group rotation={[0, rotateY, 0]}>
-        <PlaceholderMannequin />
-      </group>
-    );
-  }
-
+export function TwinLoadingFallback() {
   return (
-    <group rotation={[0, rotateY, 0]}>
-      <BodyModel headAnchor={headAnchor} />
-      <group ref={headAnchor}>
-        <group position={[0, 0.06, 0.02]}>
-          <MorphHead />
-        </group>
-      </group>
-    </group>
+    <Html center>
+      <div className="rounded-full border border-violet-300/30 bg-black/60 px-4 py-2 text-[10px] uppercase tracking-[0.25em] text-violet-100/90 backdrop-blur">
+        Loading twin…
+      </div>
+    </Html>
   );
 }

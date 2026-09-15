@@ -49,7 +49,7 @@ export function StudioLights() {
       <Environment preset="studio" environmentIntensity={0.55} />
       <AccumulativeShadows
         temporal
-        frames={48}
+        frames={24}
         color="#1a1028"
         colorBlend={1.6}
         opacity={0.55}
@@ -57,7 +57,7 @@ export function StudioLights() {
         position={[0, 0.001, 0]}
       >
         <RandomizedLight
-          amount={6}
+          amount={4}
           radius={3}
           ambient={0.4}
           intensity={1.1}

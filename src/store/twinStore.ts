@@ -155,7 +155,7 @@ export const useTwinStore = create<TwinState>()(
       setBuildProgress: (status, progress, message) =>
         set({ buildStatus: status, buildProgress: progress, buildMessage: message }),
 
-      twinReady: false,
+      twinReady: true,  // show body immediately — no capsule stub
       setTwinReady: (v) => set({ twinReady: v }),
 
       proUnlocked: false,
@@ -169,7 +169,6 @@ export const useTwinStore = create<TwinState>()(
       partialize: (s) => ({
         params: s.params,
         proUnlocked: s.proUnlocked,
-        twinReady: s.twinReady,
       }),
     }
   )

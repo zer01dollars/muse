@@ -143,16 +143,9 @@ export function SelfiePanel() {
         </div>
       )}
 
-      <button
-        type="button"
-        onClick={() => {
-          setTwinReady(true);
-          setBuildProgress("ready", 100, "Demo twin loaded — refine freely");
-        }}
-        className="text-left text-[11px] text-violet-300/70 underline-offset-2 hover:text-violet-200 hover:underline"
-      >
-        Skip AI — load default twin
-      </button>
+      <p className="text-[11px] text-white/35">
+        Twin loads automatically. Upload selfies + Build to match your face.
+      </p>
     </div>
   );
 }
