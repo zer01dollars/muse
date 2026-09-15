@@ -1,2 +1,16 @@
-Vitruvian head/body GLBs are CC0 (public domain) assets derived from the
-Vitruvian / CharMorph / Antonia Polygon lineage (see VitruvianGodot / CharMorph-Vitruvian).
+Muse default twin assets
+
+muse_twin.glb
+  Photoreal female full-body avatar (head + body + hair cards + outfit + shoes)
+  created with Avaturn (https://avaturn.me) and redistributed from the TalkingHead
+  example set (https://github.com/met4citizen/TalkingHead — avatars/avaturn.glb).
+  Non-commercial use as documented by Avaturn / TalkingHead README.
+  Credit: Avaturn · TalkingHead / met4citizen.
+
+vitruvian_body.glb / vitruvian_head.glb / vit_*.png (legacy / animation donor)
+  CC0 (public domain) Vitruvian / CharMorph / Antonia Polygon lineage
+  (VitruvianGodot / CharMorph-Vitruvian). Mixamo clips on the body are free for
+  use under Adobe Mixamo terms.
+
+ProceduralHair (optional fallback when hairStyle === "none" is not used with
+real hair): Muse / Zer01 code.

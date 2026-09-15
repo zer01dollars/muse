@@ -3,7 +3,7 @@
 **Realistic digital twin from selfies.**  
 Made By Zer01 — Artificially Intelligent, Digitally Enhanced.
 
-Muse is a premium consumer web app that builds a poseable 3D twin from your photos. Face analysis runs **entirely in the browser** via MediaPipe Face Landmarker. The twin is rendered with React Three Fiber using a CC0 Vitruvian humanoid base, photoreal PBR skin maps, studio HDRI + beauty lighting, N8AO/Bloom postprocessing, and layered hair cards.
+Muse is a premium consumer web app that builds a poseable 3D twin from your photos. Face analysis runs **entirely in the browser** via MediaPipe Face Landmarker. The twin is rendered with React Three Fiber using a **photoreal Avaturn female** (complete body + head + hair + outfit), procedural beauty idle / wave pose, studio HDRI + beauty lighting, and mild N8AO/Bloom postprocessing.
 
 ## Quick start
 
@@ -24,7 +24,7 @@ npm start       # serve production build
 - **Landing** — dark luxury marketing page with How it works, features, Free vs Pro ($12/mo)
 - **Studio** — selfie upload (1–3), Build twin, orbitable 3D viewport, accordion refine controls
 - **Face AI** — MediaPipe Tasks Vision Face Landmarker (WASM from CDN) → normalized face metrics → sliders
-- **3D** — Vitruvian body (Mixamo rig + clips) + Vitruvian head (FACS morphs), photoreal albedo maps, hair cards, ACES + soft shadows + post FX
+- **3D** — single complete female GLB (`muse_twin.glb`) with real hair cards, PBR maps, ARKit face morphs; procedural confident idle + wave
 - **Export** — canvas PNG; Free watermark `Muse · Free`; Pro demo unlock via localStorage
 
 ## Stack
@@ -33,23 +33,25 @@ Next.js 15 (App Router) · TypeScript · Tailwind CSS · React Three Fiber · Dr
 
 ## Models & textures
 
-CC0 Vitruvian assets (head + body GLB) from the open Vitruvian / CharMorph lineage, vendored under `public/models/`.
+Default twin (`public/models/muse_twin.glb`):
 
-High-res albedo maps also CC0 (same lineage):
+- Photoreal female avatar from **Avaturn**, vendored via the [TalkingHead](https://github.com/met4citizen/TalkingHead) example set (`avatars/avaturn.glb`)
+- Includes skinned body, head, eyes, teeth, dual hair meshes, outfit, shoes, and ARKit morph targets
+- See `public/models/LICENSE.txt` for credit / non-commercial notes
 
-- `public/models/vit_face_bc.png` — face diffuse (~7.8MB)
-- `public/models/vit_body_bc.png` — body diffuse (~7MB)
+Legacy / animation donor (still shipped):
 
-Applied as `map` on MeshPhysicalMaterial skin. When maps are present, `material.color` stays near-white (slight warm) so albedo pores stay visible — a dark tint multiply was crushing detail to mannequin gray. Lips / iris / cornea keep stylized overrides.
+- CC0 Vitruvian body + head + albedo PNGs (CharMorph / Antonia Polygon lineage) — used to retarget Mixamo Idle / HappyIdle / Sway / Wave / Walk onto the Avaturn rig
 
-Hair is procedural **cards** (canvas strand alpha texture), parented to `MuseHairAnchor` on the seated head scalp — not a third-party hair GLB.
+## Photoreal pipeline (v7)
 
-## Photoreal pipeline (v6)
+1. One complete character GLB (no head-seating / procedural hair by default)
+2. Preserve embedded PBR maps; soft skin tint + hair/iris recolor from ControlPanel
+3. Beauty lighting (soft key / cool fill / warm rim) + studio HDRI
+4. EffectComposer: mild N8AO, Bloom, Vignette, SMAA
+5. Procedural confident idle (breathing / sway / wave) — Mixamo donor retained for future
 
-1. PBR skin maps + MeshPhysical clearcoat/sheen (near-white map tint)  
-2. Beauty lighting (soft key / cool fill / warm rim) + studio HDRI  
-3. EffectComposer: mild N8AO, Bloom, Vignette, SMAA (AO dialed down so albedo reads)  
-4. Hair cards with strand alpha instead of capsule blobs  
+Persist key: `muse-twin-v7` (resets prior slider state once).
 
 ## Brand
 

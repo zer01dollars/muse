@@ -3,9 +3,7 @@
 import {
   Environment,
   ContactShadows,
-  AccumulativeShadows,
-  RandomizedLight,
-} from "@react-three/drei";
+  } from "@react-three/drei";
 import { useThree } from "@react-three/fiber";
 import { useEffect } from "react";
 import * as THREE from "three";
@@ -15,10 +13,10 @@ export function StudioToneMapping() {
   useEffect(() => {
     gl.toneMapping = THREE.ACESFilmicToneMapping;
     // Slightly lifted for skin — photoreal albedo reads better warm
-    gl.toneMappingExposure = 1.22;
+    gl.toneMappingExposure = 1.18;
     gl.outputColorSpace = THREE.SRGBColorSpace;
     gl.shadowMap.enabled = true;
-    gl.shadowMap.type = THREE.PCFSoftShadowMap;
+    gl.shadowMap.type = THREE.PCFShadowMap;
   }, [gl]);
   return null;
 }
@@ -43,7 +41,7 @@ export function StudioLights() {
       <directionalLight
         castShadow
         position={[2.2, 5.8, 3.2]}
-        intensity={1.28}
+        intensity={1.15}
         color="#fff2e4"
         shadow-mapSize={[2048, 2048]}
         shadow-camera-far={22}
@@ -74,7 +72,7 @@ export function StudioLights() {
         position={[0.4, 3.8, 3.2]}
         angle={0.42}
         penumbra={0.85}
-        intensity={0.65}
+        intensity={0.78}
         color="#ffe8d0"
         castShadow={false}
       />
@@ -82,34 +80,16 @@ export function StudioLights() {
       {/* Subtle under-fill so jaw/neck don't crush to black */}
       <pointLight position={[0, 0.6, 1.2]} intensity={0.22} color="#e8d4ff" distance={5} />
 
-      <Environment preset="studio" environmentIntensity={0.78} />
-
-      <AccumulativeShadows
-        temporal
-        frames={32}
-        color="#120c1c"
-        colorBlend={1.8}
-        opacity={0.58}
-        scale={8}
-        position={[0, 0.001, 0]}
-      >
-        <RandomizedLight
-          amount={6}
-          radius={4}
-          ambient={0.45}
-          intensity={1.0}
-          position={[2, 4.8, 2.5]}
-          bias={0.001}
-        />
-      </AccumulativeShadows>
+      <Environment preset="studio" environmentIntensity={0.72} />
 
       <ContactShadows
         position={[0, 0.002, 0]}
-        opacity={0.5}
+        opacity={0.45}
         scale={8}
-        blur={2.8}
+        blur={2.2}
         far={4.5}
         color="#000000"
+        frames={1}
       />
 
       <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0, 0]} receiveShadow>

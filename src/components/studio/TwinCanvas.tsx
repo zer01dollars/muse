@@ -51,7 +51,7 @@ export function TwinCanvas({
       <Canvas
         shadows
         dpr={[1, 2]}
-        camera={{ position: [0, 1.2, 2.75], fov: 34, near: 0.1, far: 50 }}
+        camera={{ position: [0.12, 1.48, 2.05], fov: 30, near: 0.1, far: 50 }}
         gl={{
           preserveDrawingBuffer: true,
           antialias: false, // SMAA handles AA; avoids MSAA+post conflict
@@ -70,11 +70,11 @@ export function TwinCanvas({
           <OrbitControls
             makeDefault
             enablePan={false}
-            minPolarAngle={Math.PI * 0.28}
-            maxPolarAngle={Math.PI * 0.52}
-            minDistance={1.6}
-            maxDistance={4.2}
-            target={[0, 1.0, 0]}
+            minPolarAngle={Math.PI * 0.35}
+            maxPolarAngle={Math.PI * 0.58}
+            minDistance={1.2}
+            maxDistance={3.8}
+            target={[0, 1.35, 0]}
           />
           <StudioPostFX />
         </Suspense>
