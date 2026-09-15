@@ -2,22 +2,29 @@
 
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal, useFrame, useThree } from "@react-three/fiber";
-import { useGLTF, useAnimations, Html } from "@react-three/drei";
+import { useGLTF, useAnimations, useTexture, Html } from "@react-three/drei";
 import * as SkeletonUtils from "three/examples/jsm/utils/SkeletonUtils.js";
 import * as THREE from "three";
 import {
-  skinColorFromParams,
   useTwinStore,
   type TwinParams,
 } from "@/store/twinStore";
 import { ProceduralHair } from "./ProceduralHair";
-import { loadSkinTextures } from "./skinTextures";
+import {
+  BODY_ALBEDO_URL,
+  FACE_ALBEDO_URL,
+  prepSkinTextures,
+} from "./skinTextures";
 
 useGLTF.preload("/models/vitruvian_body.glb");
 useGLTF.preload("/models/vitruvian_head.glb");
+useTexture.preload(FACE_ALBEDO_URL);
+useTexture.preload(BODY_ALBEDO_URL);
 
 const LIP_COLOR = "#c45a6a";
 const IRIS_GLOSS = 0.12;
+/** Near-white warm multiply — albedo carries skin tone. */
+const SKIN_TINT_BASE = "#fff8f2";
 
 const MORPH_MAP: Record<string, (p: TwinParams) => number> = {
   Jaw_Lower: (p) => Math.max(0, (p.jaw - 0.55) * 0.35),
@@ -49,15 +56,11 @@ function applyMorphs(root: THREE.Object3D, params: TwinParams) {
   });
 }
 
-
 /** Near-white warm multiply when albedo is present — preserves pores/detail. */
 function mapTintColor(params: TwinParams): THREE.Color {
-  // Albedo maps already carry skin tone; only nudge warmth / freckles lightly.
-  const c = new THREE.Color("#fff8f2");
-  // Subtle undertone shift without crushing luminance
+  const c = new THREE.Color(SKIN_TINT_BASE);
   c.offsetHSL(params.undertone * 0.012, 0.02 + Math.abs(params.undertone) * 0.02, 0);
   c.offsetHSL(0, 0, -params.freckles * 0.035);
-  // Keep multiply ≥ ~0.88 so midtone albedo stays readable
   const minL = 0.88;
   const hsl = { h: 0, s: 0, l: 0 };
   c.getHSL(hsl);
@@ -65,20 +68,15 @@ function mapTintColor(params: TwinParams): THREE.Color {
   return c;
 }
 
-/** Flat fallback when maps have not loaded yet. */
-function flatSkinColor(params: TwinParams): THREE.Color {
-  return new THREE.Color(skinColorFromParams(params.skinTone, params.undertone));
-}
-
 function makeSkinPhysical(
-  map: THREE.Texture | null,
+  map: THREE.Texture,
   tint: THREE.Color,
   params: TwinParams
 ): THREE.MeshPhysicalMaterial {
   const gloss = 0.28 + params.gloss * 0.5;
   const mat = new THREE.MeshPhysicalMaterial({
-    map: map ?? undefined,
-    color: map ? tint : flatSkinColor(params),
+    map,
+    color: tint.clone(),
     roughness: Math.min(0.68, Math.max(0.32, 0.72 - gloss * 0.55)),
     metalness: 0.0,
     clearcoat: 0.06 + params.gloss * 0.14,
@@ -89,6 +87,9 @@ function makeSkinPhysical(
     envMapIntensity: 0.7,
     side: THREE.DoubleSide,
   });
+  // Explicit reaffirm — some GLB paths left map undefined
+  mat.map = map;
+  mat.color.copy(tint);
   mat.needsUpdate = true;
   return mat;
 }
@@ -96,12 +97,18 @@ function makeSkinPhysical(
 /**
  * Photoreal head: keep high-res face albedo on skin; only override lips / eyes.
  * Name matching is token-tight — bare "eye" over-matched and wiped skin.
+ * faceMap is required (Suspense + useTexture guarantees it).
  */
 function paintHead(
   root: THREE.Object3D,
   params: TwinParams,
-  faceMap: THREE.Texture | null
+  faceMap: THREE.Texture
 ) {
+  if (!faceMap) {
+    console.warn("[Muse] paintHead skipped — no faceMap");
+    return;
+  }
+
   const tint = mapTintColor(params);
   let skinCount = 0;
   let mapped = 0;
@@ -120,7 +127,6 @@ function paintHead(
         : (mesh.material as THREE.Material | undefined)?.name) || "";
     const n = `${mesh.name} ${matName}`.toLowerCase();
 
-    // Token includes on Vit* names (vitiris etc.) — NEVER bare "eye" (over-matched skin)
     const isIris = n.includes("iris");
     const isSclera = n.includes("sclera") || n.includes("eyeback");
     const isCornea =
@@ -133,22 +139,22 @@ function paintHead(
       n.includes("gum");
     const isShadow = n.includes("eyeshadow") || n.includes("lash");
     const isCaruncle = n.includes("caruncle");
-    // Eye geometry scale only — mesh name starts with Eye_
     const meshN = mesh.name.toLowerCase();
     const isEyeMesh = meshN.startsWith("eye_") || meshN.startsWith("eye-");
     const isEyePart = isIris || isSclera || isCornea || isCaruncle;
 
-    // Prefer embedded albedo if GLB ever ships with one
-    const prev = Array.isArray(mesh.material) ? mesh.material[0] : mesh.material;
-    const embedded =
-      prev &&
-      (prev instanceof THREE.MeshStandardMaterial ||
-        prev instanceof THREE.MeshPhysicalMaterial) &&
-      prev.map
-        ? prev.map
-        : null;
-    // Share singleton albedo (safe across materials); prefer external map over embedded
-    const skinMap = faceMap ?? embedded;
+    // VitSkin / cm_vitruvian / generic skin — always get shared face albedo
+    const isSkinName =
+      n.includes("vitskin") ||
+      n.includes("cm_vitruvian") ||
+      n.includes("vitruvian") ||
+      n.includes("skin") ||
+      (!isIris &&
+        !isSclera &&
+        !isCornea &&
+        !isMouth &&
+        !isShadow &&
+        !isEyePart);
 
     let material: THREE.Material;
 
@@ -212,7 +218,6 @@ function paintHead(
         side: THREE.DoubleSide,
       });
     } else if (isEyePart) {
-      // Caruncle / residual eye parts — soft flesh, not iris paint-wipe
       material = new THREE.MeshPhysicalMaterial({
         color: "#e8b4a4",
         roughness: 0.45,
@@ -220,10 +225,15 @@ function paintHead(
         clearcoat: 0.2,
         side: THREE.DoubleSide,
       });
+    } else if (isSkinName) {
+      skinCount++;
+      material = makeSkinPhysical(faceMap, tint, params);
+      // Do not dispose shared textures
+      mapped++;
     } else {
       skinCount++;
-      material = makeSkinPhysical(skinMap, tint, params);
-      if (skinMap) mapped++;
+      material = makeSkinPhysical(faceMap, tint, params);
+      mapped++;
     }
 
     mesh.material = material;
@@ -245,10 +255,14 @@ function paintHead(
 function tintBody(
   root: THREE.Object3D,
   params: TwinParams,
-  bodyMap: THREE.Texture | null
+  bodyMap: THREE.Texture
 ) {
+  if (!bodyMap) {
+    console.warn("[Muse] tintBody skipped — no bodyMap");
+    return;
+  }
+
   const tint = mapTintColor(params);
-  const skinHex = skinColorFromParams(params.skinTone, params.undertone);
   let bodySkin = 0;
   let mapped = 0;
 
@@ -280,16 +294,10 @@ function tintBody(
         mat.roughness = 0.5;
       } else {
         bodySkin++;
-        // Skin / body — apply high-res albedo; near-white multiply keeps pores
-        const embedded = mat.map;
-        const map = bodyMap ?? embedded;
-        if (map) {
-          mat.map = map;
-          mat.color.copy(tint);
-          mapped++;
-        } else {
-          mat.color.set(skinHex);
-        }
+        // Share singleton albedo — never dispose
+        mat.map = bodyMap;
+        mat.color.copy(tint);
+        mapped++;
         mat.roughness = Math.min(0.78, Math.max(0.38, 0.7 - params.gloss * 0.28));
         mat.metalness = 0;
         if (mat instanceof THREE.MeshPhysicalMaterial) {
@@ -489,12 +497,19 @@ function TwinRig() {
   const wrap = useRef<THREE.Group>(null);
   const bodyRef = useRef<THREE.Group>(null);
   const [hairHost, setHairHost] = useState<THREE.Object3D | null>(null);
-  const [maps, setMaps] = useState<{
-    face: THREE.Texture | null;
-    body: THREE.Texture | null;
-  }>({ face: null, body: null });
   const params = useTwinStore((s) => s.params);
   const gl = useThree((s) => s.gl);
+
+  // Suspense: TwinRig does not mount until both albedos exist — no null race.
+  const [faceMap, bodyMap] = useTexture([FACE_ALBEDO_URL, BODY_ALBEDO_URL]);
+
+  // Prep once on the shared textures (flipY, SRGB, anisotropy)
+  if (!faceMap.userData.musePrepped) {
+    const aniso = Math.min(16, gl.capabilities.getMaxAnisotropy());
+    prepSkinTextures(faceMap, bodyMap, aniso);
+    faceMap.userData.musePrepped = true;
+    bodyMap.userData.musePrepped = true;
+  }
 
   const bodyGltf = useGLTF("/models/vitruvian_body.glb");
   const headGltf = useGLTF("/models/vitruvian_head.glb");
@@ -503,19 +518,6 @@ function TwinRig() {
   const head = useMemo(() => headGltf.scene.clone(true), [headGltf.scene]);
 
   const { actions, names } = useAnimations(bodyGltf.animations, bodyRef);
-
-  // Load photoreal albedo maps once; share across skinned clones
-  useEffect(() => {
-    let alive = true;
-    const aniso = Math.min(16, gl.capabilities.getMaxAnisotropy());
-    loadSkinTextures(aniso).then(([face, bodyTex]) => {
-      if (!alive) return;
-      setMaps({ face, body: bodyTex });
-    });
-    return () => {
-      alive = false;
-    };
-  }, [gl]);
 
   useLayoutEffect(() => {
     const bone = findHeadBone(body);
@@ -527,8 +529,9 @@ function TwinRig() {
 
     seatHeadOnBone(bone, head);
     const p0 = useTwinStore.getState().params;
-    paintHead(head, p0, maps.face);
-    tintBody(body, p0, maps.body);
+    // Maps are guaranteed non-null via useTexture + Suspense
+    paintHead(head, p0, faceMap);
+    tintBody(body, p0, bodyMap);
     applyMorphs(head, p0);
     applyFeminineSilhouette(body, p0);
 
@@ -544,14 +547,7 @@ function TwinRig() {
       if (a) head.remove(a);
       bone.remove(head);
     };
-  }, [body, head]);
-
-  // Re-paint when textures arrive (first load) without reseating head
-  useEffect(() => {
-    if (!maps.face && !maps.body) return;
-    paintHead(head, useTwinStore.getState().params, maps.face);
-    tintBody(body, useTwinStore.getState().params, maps.body);
-  }, [maps.face, maps.body, head, body]);
+  }, [body, head, faceMap, bodyMap]);
 
   useEffect(() => {
     try {
@@ -573,8 +569,11 @@ function TwinRig() {
   }, [actions, names, params.posePreset]);
 
   useEffect(() => {
-    paintHead(head, params, maps.face);
-    tintBody(body, params, maps.body);
+    // Guard: never re-paint without albedo (should be impossible with useTexture)
+    if (!faceMap || !bodyMap) return;
+
+    paintHead(head, params, faceMap);
+    tintBody(body, params, bodyMap);
     applyMorphs(head, params);
     applyFeminineSilhouette(body, params);
 
@@ -594,8 +593,8 @@ function TwinRig() {
   }, [
     body,
     head,
-    maps.face,
-    maps.body,
+    faceMap,
+    bodyMap,
     params.skinTone,
     params.undertone,
     params.freckles,
