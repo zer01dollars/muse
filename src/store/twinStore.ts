@@ -23,7 +23,7 @@ export type PosePreset =
 
 export const OUTFIT_OPTIONS: { id: OutfitPreset; label: string; blurb: string }[] = [
   { id: "glam-evening", label: "Glam evening", blurb: "Sequin mini · jewelry sheen" },
-  { id: "lingerie", label: "Lingerie", blurb: "Satin bra + briefs · skin on" },
+  { id: "lingerie", label: "Lingerie", blurb: "Satin teddy · fitted bodysuit" },
   { id: "club-bodycon", label: "Club bodycon", blurb: "Cutouts · metallic accents" },
   { id: "sheer-glam", label: "Sheer glam", blurb: "Mesh panels · glow" },
 ];
@@ -207,7 +207,7 @@ export const useTwinStore = create<TwinState>()(
       setMobileWarned: (v) => set({ mobileWarned: v }),
     }),
     {
-      name: "muse-twin-v9",
+      name: "muse-twin-v10",
       partialize: (s) => ({
         params: s.params,
         proUnlocked: s.proUnlocked,

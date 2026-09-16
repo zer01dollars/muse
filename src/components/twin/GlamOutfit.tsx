@@ -14,24 +14,15 @@ function findBone(root: THREE.Object3D, base: string): THREE.Bone | null {
   return null;
 }
 
-type ClipMode = "mini" | "lingerie";
-
 type ClipOpts = {
-  mode: ClipMode;
+  /** Gentle hem only — never band-discard torso (look mesh IS the clothed body). */
   hemY: number;
   armX: number;
-  /** Lingerie bra band Y (bind) */
-  braMin?: number;
-  braMax?: number;
-  /** Lingerie panty band Y (bind) */
-  pantyMin?: number;
-  pantyMax?: number;
 };
 
 /**
  * Bind-pose clip on skinned avaturn_look:
- * - mini: sleeveless hemmed dress (evening / club / sheer)
- * - lingerie: keep only bra + panty bands so body/skin stays fully visible
+ * sleeveless hemmed dress / teddy — keeps FULL torso (no bra/panty band discard).
  */
 function installOutfitClip(mat: THREE.Material, opts: ClipOpts) {
   mat.userData.museClipOpts = opts;
@@ -43,13 +34,10 @@ function installOutfitClip(mat: THREE.Material, opts: ClipOpts) {
       | undefined;
     if (!sh?.uniforms) return;
     const o = mat.userData.museClipOpts as ClipOpts;
-    if (sh.uniforms.uClipMode) sh.uniforms.uClipMode.value = o.mode === "lingerie" ? 1 : 0;
     if (sh.uniforms.uHemY) sh.uniforms.uHemY.value = o.hemY;
     if (sh.uniforms.uArmX) sh.uniforms.uArmX.value = o.armX;
-    if (sh.uniforms.uBraMin) sh.uniforms.uBraMin.value = o.braMin ?? 1.28;
-    if (sh.uniforms.uBraMax) sh.uniforms.uBraMax.value = o.braMax ?? 1.44;
-    if (sh.uniforms.uPantyMin) sh.uniforms.uPantyMin.value = o.pantyMin ?? 0.97;
-    if (sh.uniforms.uPantyMax) sh.uniforms.uPantyMax.value = o.pantyMax ?? 1.11;
+    // Force legacy lingerie band mode OFF if a prior compile left it on
+    if (sh.uniforms.uClipMode) sh.uniforms.uClipMode.value = 0;
   };
 
   if (mat.userData.museClipInstalled) {
@@ -57,18 +45,12 @@ function installOutfitClip(mat: THREE.Material, opts: ClipOpts) {
     return;
   }
   mat.userData.museClipInstalled = true;
-  // Migrate old flag
   mat.userData.museMiniClip = true;
 
   mat.onBeforeCompile = (shader) => {
     const o = mat.userData.museClipOpts as ClipOpts;
-    shader.uniforms.uClipMode = { value: o.mode === "lingerie" ? 1 : 0 };
     shader.uniforms.uHemY = { value: o.hemY };
     shader.uniforms.uArmX = { value: o.armX };
-    shader.uniforms.uBraMin = { value: o.braMin ?? 1.28 };
-    shader.uniforms.uBraMax = { value: o.braMax ?? 1.44 };
-    shader.uniforms.uPantyMin = { value: o.pantyMin ?? 0.97 };
-    shader.uniforms.uPantyMax = { value: o.pantyMax ?? 1.11 };
 
     shader.vertexShader = shader.vertexShader
       .replace(
@@ -87,31 +69,17 @@ vMuseBindPos = position;`
         "#include <common>",
         `#include <common>
 varying vec3 vMuseBindPos;
-uniform float uClipMode;
 uniform float uHemY;
-uniform float uArmX;
-uniform float uBraMin;
-uniform float uBraMax;
-uniform float uPantyMin;
-uniform float uPantyMax;`
+uniform float uArmX;`
       )
       .replace(
         "#include <clipping_planes_fragment>",
         `#include <clipping_planes_fragment>
 float by = vMuseBindPos.y;
 float bx = abs(vMuseBindPos.x);
-if (uClipMode > 0.5) {
-  // Lingerie: skinned bra + panty bands only (body stays visible underneath)
-  bool bra = by > uBraMin && by < uBraMax && bx < 0.20;
-  bool panty = by > uPantyMin && by < uPantyMax && bx < 0.20;
-  // Thin shoulder straps from suit
-  bool strap = bx > 0.09 && bx < 0.16 && by > uBraMin && by < 1.54;
-  if (!(bra || panty || strap)) discard;
-} else {
-  // Mini dress: hem + sleeveless
-  if (by < uHemY) discard;
-  if (bx > uArmX && by > 1.02 && by < 1.56) discard;
-}`
+// Mini / teddy hem + sleeveless only — NEVER discard chest/torso bands
+if (by < uHemY) discard;
+if (bx > uArmX && by > 1.02 && by < 1.56) discard;`
       );
     mat.userData.shader = shader;
   };
@@ -186,13 +154,13 @@ function styleAsPhysical(
 function styleShoes(mesh: THREE.Mesh, outfit: OutfitPreset) {
   const shoeTint: Record<OutfitPreset, string> = {
     "glam-evening": "#1a1210",
-    lingerie: "#2a1820",
+    lingerie: "#2a1020",
     "club-bodycon": "#0e0e12",
     "sheer-glam": "#c9a86a",
   };
   const shoeMetal: Record<OutfitPreset, number> = {
     "glam-evening": 0.55,
-    lingerie: 0.25,
+    lingerie: 0.35,
     "club-bodycon": 0.4,
     "sheer-glam": 0.75,
   };
@@ -231,15 +199,15 @@ function isBodySkinOrHair(n: string) {
 /**
  * Apply glam outfit to the twin:
  * - ALWAYS keep body / hair / shoes / head visible
- * - Evening / club / sheer / lingerie → restyle skinned avaturn_look_0 (clip)
- * - Lingerie never hides the body; clips suit into bra + panty bands on-skin
+ * - Evening / club / sheer → restyle + gentle mini hem/sleeves
+ * - Lingerie → satin teddy / fitted bodysuit restyle of FULL look mesh
+ *   (same gentle hem only — NEVER band-clip discard chest/torso)
  */
 export function applyGlamOutfit(root: THREE.Object3D, outfit: OutfitPreset) {
   root.traverse((obj) => {
     const n = obj.name.toLowerCase();
     const mesh = obj as THREE.Mesh;
 
-    // Never hide body, hair, head, eyes, skin
     if (isBodySkinOrHair(n)) {
       if (!/hair_1/i.test(obj.name)) obj.visible = true;
     }
@@ -253,7 +221,7 @@ export function applyGlamOutfit(root: THREE.Object3D, outfit: OutfitPreset) {
     const isLook = n.includes("avaturn_look") || n.includes("look_0");
     if (!isLook) return;
 
-    // Keep suit mesh visible for ALL outfits (incl. lingerie) — clip restyles it
+    // Keep full suit mesh for ALL outfits — look IS the clothed body surface
     obj.visible = true;
     if (!mesh.isMesh || !mesh.material) return;
 
@@ -286,7 +254,7 @@ export function applyGlamOutfit(root: THREE.Object3D, outfit: OutfitPreset) {
           emissiveIntensity: 0.1,
           envMapIntensity: 1.55,
         });
-        clip = { mode: "mini", hemY: 0.88, armX: 0.205 };
+        clip = { hemY: 0.88, armX: 0.205 };
       } else if (outfit === "club-bodycon") {
         styled = styleAsPhysical(mat, {
           color: "#0a0a10",
@@ -301,7 +269,7 @@ export function applyGlamOutfit(root: THREE.Object3D, outfit: OutfitPreset) {
           emissiveIntensity: 0.06,
           envMapIntensity: 1.25,
         });
-        clip = { mode: "mini", hemY: 0.82, armX: 0.205 };
+        clip = { hemY: 0.82, armX: 0.205 };
       } else if (outfit === "sheer-glam") {
         styled = styleAsPhysical(mat, {
           color: "#2a1838",
@@ -319,31 +287,25 @@ export function applyGlamOutfit(root: THREE.Object3D, outfit: OutfitPreset) {
           thickness: 0.18,
           envMapIntensity: 1.35,
         });
-        clip = { mode: "mini", hemY: 0.86, armX: 0.205 };
+        clip = { hemY: 0.86, armX: 0.205 };
       } else {
-        // lingerie — satin bands on visible skin (no procedural cylinders)
+        // lingerie — satin teddy / fitted bodysuit over FULL torso (no band discard)
         styled = styleAsPhysical(mat, {
-          color: "#2a1520",
-          metalness: 0.08,
-          roughness: 0.28,
+          color: "#c4185a",
+          metalness: 0.12,
+          roughness: 0.18,
           sheen: 1,
-          sheenColor: "#e8b8c8",
-          sheenRoughness: 0.28,
-          clearcoat: 0.45,
-          clearcoatRoughness: 0.32,
-          emissive: "#4a2030",
-          emissiveIntensity: 0.04,
-          envMapIntensity: 1.05,
+          sheenColor: "#ffb8d4",
+          sheenRoughness: 0.18,
+          clearcoat: 0.85,
+          clearcoatRoughness: 0.15,
+          emissive: "#8a1040",
+          emissiveIntensity: 0.08,
+          opacity: 0.92,
+          envMapIntensity: 1.35,
         });
-        clip = {
-          mode: "lingerie",
-          hemY: 0.97,
-          armX: 0.18,
-          braMin: 1.28,
-          braMax: 1.44,
-          pantyMin: 0.97,
-          pantyMax: 1.11,
-        };
+        // Same gentle mini hem as evening — keeps chest/torso geometry intact
+        clip = { hemY: 0.9, armX: 0.2 };
       }
 
       installOutfitClip(styled, clip);
@@ -399,8 +361,8 @@ function GlamEarrings({ tone }: { tone: "gold" | "violet" }) {
 }
 
 /**
- * Glam wardrobe — restyles skinned Avaturn look for all outfits (incl. lingerie).
- * No floating procedural body/cylinder geometry.
+ * Glam wardrobe — restyles skinned Avaturn look for all outfits (incl. lingerie teddy).
+ * Lingerie keeps full torso; no floating band scraps.
  */
 export function GlamWardrobe({
   twin,
@@ -427,7 +389,6 @@ export function GlamWardrobe({
     ) {
       head.getWorldPosition(headPos);
       head.getWorldQuaternion(headQuat);
-      // Convert world → local so scale/rotate parents don't float earrings
       if (jewelry.current.parent) {
         jewelry.current.parent.worldToLocal(headPos);
       }

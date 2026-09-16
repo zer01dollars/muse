@@ -25,30 +25,30 @@ npm start       # serve production build
 - **Studio** — selfie upload (1–3), Build twin, orbitable 3D viewport, accordion refine controls
 - **Glam lane** — 4 outfits + 6 poses selectable as chips in the Refine panel (Outfit / Pose)
 - **Face AI** — MediaPipe Tasks Vision Face Landmarker (WASM from CDN) → normalized face metrics → sliders
-- **3D** — Avaturn `muse_twin.glb` with real hair cards, PBR maps, ARKit face morphs; glam wardrobe (skinned minis + fitted lingerie) + bone-driven poses
+- **3D** — Avaturn `muse_twin.glb` with real hair cards, PBR maps, ARKit face morphs; glam wardrobe (skinned minis + satin teddy) + calibrated A-pose bone presets
 - **Export** — canvas PNG; Free watermark `Muse · Free`; Pro demo unlock via localStorage
 
 ## Glam outfits
 
-Skinned Avaturn suit (`avaturn_look_0`) stays on-body for every look — retinted + clipped. Body, hair, and shoes always stay visible (never hidden for lingerie).
+Skinned Avaturn suit (`avaturn_look_0`) is the clothed body surface — retinted + gentle hem/sleeve clip only. Never band-discard torso (that deleted the chest and left floating scraps). Body, hair, and shoes always stay visible.
 
 1. **Glam evening** — sequin mini (skinned), gold earrings, heels-tint shoes
-2. **Lingerie** — satin bra + panty bands clipped from the skinned suit (skin stays visible)
+2. **Lingerie** — hot pink/black satin teddy / fitted bodysuit restyle of the **full** look mesh (gentle hem only — torso intact)
 3. **Club bodycon** — glossy black mini, pink sheen, metallic shoes
 4. **Sheer glam** — translucent violet mini with glow + violet earrings
 
 ## Glam poses
 
-Bone Euler deltas on the Mixamo/Avaturn skeleton (bind reset + lerp-friendly offsets each frame):
+Calibrated A-pose arm quaternions + small safe Euler deltas (bind captured once; no per-frame `skeleton.pose()`, no arm bone scaling):
 
-1. **Soft idle** — breath + gentle sway (default)
+1. **Soft idle** — A-pose tuck + breath/sway (default, clearly not T-pose)
 2. **Hand on hip** — confident weight shift
 3. **Over-shoulder** — glance back
 4. **S-curve** — contrapposto silhouette
 5. **Club sway** — looping groove
 6. **Hair toss** — arms up pulse
 
-Default: **glam evening + soft idle**. Persist key: `muse-twin-v9`.
+Default: **glam evening + soft idle**. Persist key: `muse-twin-v10`.
 
 ## Stack
 
@@ -66,14 +66,14 @@ Legacy / animation donor (still shipped):
 
 - CC0 Vitruvian body + head + albedo PNGs (CharMorph / Antonia Polygon lineage)
 
-## Photoreal pipeline (v9)
+## Photoreal pipeline (v10)
 
 1. One complete character GLB (no head-seating / procedural hair by default)
 2. Preserve embedded PBR maps; soft skin tint + hair/iris recolor from ControlPanel
-3. Restyle skinned suit into glam minis / lingerie bands (clip hem/sleeves/bands); body always visible
+3. Restyle skinned suit into glam minis / satin teddy (gentle hem/sleeves only — full torso); body always visible
 4. Beauty lighting (soft key / cool fill / warm rim) + studio HDRI
 5. EffectComposer: mild N8AO, glam Bloom, Vignette, SMAA
-6. Six bone-driven pose presets with soft idle / club / hair-toss loops
+6. Six pose presets from calibrated A-pose + soft idle / club / hair-toss loops
 
 ## Brand
 
