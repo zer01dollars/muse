@@ -14,76 +14,19 @@ function findBone(root: THREE.Object3D, base: string): THREE.Bone | null {
   return null;
 }
 
-type ClipOpts = {
-  /** Gentle hem only — never band-discard torso (look mesh IS the clothed body). */
-  hemY: number;
-  armX: number;
-};
-
 /**
- * Bind-pose clip on skinned avaturn_look:
- * sleeveless hemmed dress / teddy — keeps FULL torso (no bra/panty band discard).
+ * Scorched-earth: shader discard hem/arm clips created floating arm scraps.
+ * Outfits are material restyles of the FULL look mesh only — no discard.
  */
-function installOutfitClip(mat: THREE.Material, opts: ClipOpts) {
-  mat.userData.museClipOpts = opts;
-  const sync = () => {
-    const sh = mat.userData.shader as
-      | {
-          uniforms?: Record<string, { value: number }>;
-        }
-      | undefined;
-    if (!sh?.uniforms) return;
-    const o = mat.userData.museClipOpts as ClipOpts;
-    if (sh.uniforms.uHemY) sh.uniforms.uHemY.value = o.hemY;
-    if (sh.uniforms.uArmX) sh.uniforms.uArmX.value = o.armX;
-    // Force legacy lingerie band mode OFF if a prior compile left it on
-    if (sh.uniforms.uClipMode) sh.uniforms.uClipMode.value = 0;
-  };
-
-  if (mat.userData.museClipInstalled) {
-    sync();
-    return;
+function clearOutfitClip(mat: THREE.Material) {
+  if (mat.userData.museClipInstalled || mat.userData.museMiniClip) {
+    mat.onBeforeCompile = () => {};
+    delete mat.userData.museClipInstalled;
+    delete mat.userData.museMiniClip;
+    delete mat.userData.museClipOpts;
+    delete mat.userData.shader;
+    mat.needsUpdate = true;
   }
-  mat.userData.museClipInstalled = true;
-  mat.userData.museMiniClip = true;
-
-  mat.onBeforeCompile = (shader) => {
-    const o = mat.userData.museClipOpts as ClipOpts;
-    shader.uniforms.uHemY = { value: o.hemY };
-    shader.uniforms.uArmX = { value: o.armX };
-
-    shader.vertexShader = shader.vertexShader
-      .replace(
-        "#include <common>",
-        `#include <common>
-varying vec3 vMuseBindPos;`
-      )
-      .replace(
-        "#include <begin_vertex>",
-        `#include <begin_vertex>
-vMuseBindPos = position;`
-      );
-
-    shader.fragmentShader = shader.fragmentShader
-      .replace(
-        "#include <common>",
-        `#include <common>
-varying vec3 vMuseBindPos;
-uniform float uHemY;
-uniform float uArmX;`
-      )
-      .replace(
-        "#include <clipping_planes_fragment>",
-        `#include <clipping_planes_fragment>
-float by = vMuseBindPos.y;
-float bx = abs(vMuseBindPos.x);
-// Mini / teddy hem + sleeveless only — NEVER discard chest/torso bands
-if (by < uHemY) discard;
-if (bx > uArmX && by > 1.02 && by < 1.56) discard;`
-      );
-    mat.userData.shader = shader;
-  };
-  mat.needsUpdate = true;
 }
 
 function styleAsPhysical(
@@ -119,6 +62,8 @@ function styleAsPhysical(
     m.alphaMap = mat.alphaMap;
     m.name = mat.name;
   }
+
+  clearOutfitClip(m);
 
   m.color.set(opts.color);
   if (m.map) {
@@ -199,14 +144,24 @@ function isBodySkinOrHair(n: string) {
 /**
  * Apply glam outfit to the twin:
  * - ALWAYS keep body / hair / shoes / head visible
- * - Evening / club / sheer → restyle + gentle mini hem/sleeves
- * - Lingerie → satin teddy / fitted bodysuit restyle of FULL look mesh
- *   (same gentle hem only — NEVER band-clip discard chest/torso)
+ * - ALL outfits → material restyle of FULL look mesh (no shader discard)
+ * - Lingerie → satin teddy colors on full mesh (no band clip)
  */
 export function applyGlamOutfit(root: THREE.Object3D, outfit: OutfitPreset) {
   root.traverse((obj) => {
     const n = obj.name.toLowerCase();
     const mesh = obj as THREE.Mesh;
+
+    // Hide any leftover procedural wardrobe duplicates from older builds
+    if (
+      n.includes("muse-lingerie") ||
+      n.includes("muse-wardrobe") ||
+      n.includes("procedural-outfit") ||
+      n.includes("outfit-scrap")
+    ) {
+      obj.visible = false;
+      return;
+    }
 
     if (isBodySkinOrHair(n)) {
       if (!/hair_1/i.test(obj.name)) obj.visible = true;
@@ -221,7 +176,6 @@ export function applyGlamOutfit(root: THREE.Object3D, outfit: OutfitPreset) {
     const isLook = n.includes("avaturn_look") || n.includes("look_0");
     if (!isLook) return;
 
-    // Keep full suit mesh for ALL outfits — look IS the clothed body surface
     obj.visible = true;
     if (!mesh.isMesh || !mesh.material) return;
 
@@ -238,7 +192,6 @@ export function applyGlamOutfit(root: THREE.Object3D, outfit: OutfitPreset) {
       }
 
       let styled: THREE.MeshPhysicalMaterial;
-      let clip: ClipOpts;
 
       if (outfit === "glam-evening") {
         styled = styleAsPhysical(mat, {
@@ -254,7 +207,6 @@ export function applyGlamOutfit(root: THREE.Object3D, outfit: OutfitPreset) {
           emissiveIntensity: 0.1,
           envMapIntensity: 1.55,
         });
-        clip = { hemY: 0.88, armX: 0.205 };
       } else if (outfit === "club-bodycon") {
         styled = styleAsPhysical(mat, {
           color: "#0a0a10",
@@ -269,7 +221,6 @@ export function applyGlamOutfit(root: THREE.Object3D, outfit: OutfitPreset) {
           emissiveIntensity: 0.06,
           envMapIntensity: 1.25,
         });
-        clip = { hemY: 0.82, armX: 0.205 };
       } else if (outfit === "sheer-glam") {
         styled = styleAsPhysical(mat, {
           color: "#2a1838",
@@ -287,9 +238,8 @@ export function applyGlamOutfit(root: THREE.Object3D, outfit: OutfitPreset) {
           thickness: 0.18,
           envMapIntensity: 1.35,
         });
-        clip = { hemY: 0.86, armX: 0.205 };
       } else {
-        // lingerie — satin teddy / fitted bodysuit over FULL torso (no band discard)
+        // lingerie — satin teddy colors on FULL suit mesh (no band/hem discard)
         styled = styleAsPhysical(mat, {
           color: "#c4185a",
           metalness: 0.12,
@@ -304,11 +254,8 @@ export function applyGlamOutfit(root: THREE.Object3D, outfit: OutfitPreset) {
           opacity: 0.92,
           envMapIntensity: 1.35,
         });
-        // Same gentle mini hem as evening — keeps chest/torso geometry intact
-        clip = { hemY: 0.9, armX: 0.2 };
       }
 
-      installOutfitClip(styled, clip);
       next.push(styled);
     }
 
@@ -361,8 +308,8 @@ function GlamEarrings({ tone }: { tone: "gold" | "violet" }) {
 }
 
 /**
- * Glam wardrobe — restyles skinned Avaturn look for all outfits (incl. lingerie teddy).
- * Lingerie keeps full torso; no floating band scraps.
+ * Glam wardrobe — restyles skinned Avaturn look for all outfits.
+ * No shader discard clips (prevents floating arm scraps).
  */
 export function GlamWardrobe({
   twin,
