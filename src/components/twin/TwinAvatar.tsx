@@ -5,7 +5,8 @@ import { useFrame } from "@react-three/fiber";
 import { useGLTF, Html } from "@react-three/drei";
 import * as SkeletonUtils from "three/examples/jsm/utils/SkeletonUtils.js";
 import * as THREE from "three";
-import { useTwinStore, type TwinParams } from "@/store/twinStore";
+import { useTwinStore, type PosePreset, type TwinParams } from "@/store/twinStore";
+import { GlamWardrobe } from "@/components/twin/GlamOutfit";
 
 /** Single complete photoreal female (Avaturn) — body + head + hair + outfit. */
 const TWIN_URL = "/models/muse_twin.glb";
@@ -48,11 +49,7 @@ function safeClone(scene: THREE.Object3D) {
 }
 
 function findBone(root: THREE.Object3D, base: string): THREE.Bone | null {
-  const candidates = [
-    `mixamorig:${base}`,
-    `mixamorig${base}`,
-    base,
-  ];
+  const candidates = [`mixamorig:${base}`, `mixamorig${base}`, base];
   for (const name of candidates) {
     const o = root.getObjectByName(name);
     if (o) return o as THREE.Bone;
@@ -207,6 +204,7 @@ function enhanceMaterials(root: THREE.Object3D, params: TwinParams) {
           mat.envMapIntensity = 0.55;
         }
       } else if (n.includes("look") || n.includes("outfit") || n.includes("cloth")) {
+        // Baked suit hidden by glam wardrobe — keep quiet if visible
         mat.roughness = Math.min(0.85, Math.max(0.4, mat.roughness ?? 0.7));
         mat.metalness = Math.min(0.2, mat.metalness ?? 0);
         if (mat instanceof THREE.MeshPhysicalMaterial) {
@@ -239,13 +237,167 @@ function resetSkeletonPose(root: THREE.Object3D) {
   });
 }
 
-/** Soft idle on bind pose using local Euler deltas (Avaturn T-pose → relaxed). */
-function applyIdlePose(root: THREE.Object3D, p: TwinParams, t: number) {
-  resetSkeletonPose(root);
+type BoneDelta = [number, number, number];
 
+/** Static glam pose offsets on Mixamo/Avaturn bind (local Euler deltas). */
+function poseStaticOffsets(preset: PosePreset, p: TwinParams): Record<string, BoneDelta> {
+  const armL = p.armL;
+  const armR = p.armR;
+  const lean = p.torsoLean;
+
+  switch (preset) {
+    case "hand-on-hip":
+      return {
+        Hips: [0.02, 0.06, 0.04],
+        Spine: [0.04, 0.05, lean * 0.08],
+        Spine1: [0.03, 0.04, 0.02],
+        Spine2: [0.02, 0.03, -0.02],
+        Neck: [-0.04, -0.08, 0.02],
+        Head: [-0.02, -0.12, 0.02],
+        LeftShoulder: [0.05, 0.05, -0.15],
+        // Left hand on hip — arm down + elbow back
+        LeftArm: [0.15 + armL * 0.1, 0.35, -0.85],
+        LeftForeArm: [-0.15, 0.1, -0.95],
+        LeftHand: [0.1, 0.2, -0.2],
+        RightShoulder: [0.02, -0.02, 0.08],
+        RightArm: [0.08, -0.05, 0.35 + armR * 0.1],
+        RightForeArm: [0.05, 0, 0.15],
+        LeftUpLeg: [0.02, 0.04, -0.06],
+        RightUpLeg: [0.02, -0.02, 0.08],
+      };
+    case "over-shoulder":
+      return {
+        Hips: [0.01, -0.12, -0.03],
+        Spine: [0.03, -0.18, lean * 0.05],
+        Spine1: [0.02, -0.12, -0.04],
+        Spine2: [0.02, -0.1, -0.02],
+        Neck: [-0.05, -0.45, 0.05],
+        Head: [-0.04, -0.55, 0.08],
+        LeftArm: [0.06, 0.05, -0.3 + armL * 0.1],
+        LeftForeArm: [0.05, 0, -0.1],
+        RightShoulder: [-0.05, 0.1, 0.2],
+        RightArm: [-0.2, 0.25, 0.55 + armR * 0.1],
+        RightForeArm: [-0.4, 0.1, 0.2],
+        RightHand: [0, 0.15, 0.1],
+      };
+    case "s-curve":
+      return {
+        Hips: [0.03, 0.08, 0.1],
+        Spine: [0.05, 0.06, lean * 0.12],
+        Spine1: [0.04, -0.04, -0.08],
+        Spine2: [0.03, 0.05, 0.06],
+        Neck: [-0.03, -0.06, -0.04],
+        Head: [-0.02, -0.1, 0.03],
+        LeftArm: [0.1, 0.15, -0.45 + armL * 0.12],
+        LeftForeArm: [-0.05, 0.05, -0.35],
+        RightArm: [0.08, -0.12, 0.55 + armR * 0.12],
+        RightForeArm: [0.05, -0.05, 0.25],
+        LeftUpLeg: [0.04, 0.06, -0.1],
+        RightUpLeg: [0.02, -0.04, 0.12],
+        LeftLeg: [0.05, 0, 0],
+        RightLeg: [-0.02, 0, 0],
+      };
+    case "club-sway":
+      return {
+        Hips: [0.02, 0, 0],
+        Spine: [0.03, 0, lean * 0.04],
+        Spine1: [0.025, 0, 0],
+        Spine2: [0.015, 0, 0],
+        Neck: [-0.02, -0.04, 0],
+        Head: [-0.015, -0.05, 0],
+        LeftArm: [0.08, 0.08, -0.4 + armL * 0.1],
+        LeftForeArm: [-0.1, 0.05, -0.2],
+        RightArm: [0.08, -0.08, 0.4 + armR * 0.1],
+        RightForeArm: [-0.1, -0.05, 0.2],
+      };
+    case "hair-toss":
+      return {
+        Hips: [0.02, -0.05, -0.02],
+        Spine: [0.05, -0.08, lean * 0.06],
+        Spine1: [0.06, -0.06, 0],
+        Spine2: [0.08, -0.04, 0],
+        Neck: [-0.15, 0.1, 0],
+        Head: [-0.25, 0.15, 0.05],
+        LeftShoulder: [-0.35, 0.15, -0.25],
+        LeftArm: [-1.1 + armL * 0.15, 0.25, -0.35],
+        LeftForeArm: [-0.35, 0.1, -0.15],
+        RightShoulder: [-0.35, -0.15, 0.25],
+        RightArm: [-1.1 + armR * 0.15, -0.25, 0.35],
+        RightForeArm: [-0.35, -0.1, 0.15],
+      };
+    case "soft-idle":
+    default:
+      return {
+        Hips: [0, 0, 0],
+        Spine: [0.025, 0, lean * 0.04],
+        Spine1: [0.02, 0, 0],
+        Spine2: [0.01, 0, 0],
+        Neck: [-0.02, -0.03, 0],
+        Head: [-0.015, -0.05, 0],
+        LeftArm: [0.05, 0.02, -0.28 + armL * 0.15],
+        RightArm: [0.05, -0.02, 0.28 + armR * 0.15],
+      };
+  }
+}
+
+/** Looping motion layers — soft idle breath/sway, club groove, hair-toss pulse. */
+function poseMotionLayer(
+  preset: PosePreset,
+  t: number
+): Record<string, BoneDelta> {
   const breath = Math.sin(t * 1.05) * 0.01;
   const sway = Math.sin(t * 0.5) * 0.015;
-  const wave = p.posePreset === "Wave";
+  const headBob = Math.sin(t * 0.35) * 0.006;
+
+  if (preset === "club-sway") {
+    const g = t * 2.2;
+    const hip = Math.sin(g) * 0.07;
+    const bounce = Math.abs(Math.sin(g)) * 0.03;
+    const armPump = Math.sin(g + 0.4) * 0.08;
+    return {
+      Hips: [bounce * 0.3, hip * 0.35, hip],
+      Spine: [breath + bounce, hip * 0.25, hip * 0.4],
+      Spine1: [breath * 0.6, hip * 0.15, -hip * 0.2],
+      Spine2: [0.01 + bounce * 0.4, hip * 0.1, hip * 0.15],
+      Neck: [-0.02, -0.03 + hip * 0.2, 0],
+      Head: [-0.01 + headBob, -0.04 + hip * 0.15, 0],
+      LeftArm: [0.02 + armPump, 0.04, -0.05 * Math.sin(g)],
+      RightArm: [0.02 - armPump, -0.04, 0.05 * Math.sin(g)],
+      LeftUpLeg: [0.02 * Math.sin(g), 0, -hip * 0.3],
+      RightUpLeg: [0.02 * Math.sin(g + Math.PI), 0, hip * 0.3],
+    };
+  }
+
+  if (preset === "hair-toss") {
+    const pulse = 0.5 + 0.5 * Math.sin(t * 1.8);
+    const toss = Math.sin(t * 1.8) * 0.12;
+    return {
+      Head: [-0.05 * pulse + toss * 0.3, toss, Math.sin(t * 2.1) * 0.04],
+      Neck: [-0.04 * pulse, toss * 0.5, 0],
+      Spine2: [0.02 * pulse, toss * 0.2, 0],
+      LeftArm: [-0.08 * pulse, 0.05 * Math.sin(t * 2), -0.04 * pulse],
+      RightArm: [-0.08 * pulse, -0.05 * Math.sin(t * 2), 0.04 * pulse],
+    };
+  }
+
+  // Soft idle + shared breath for most glam poses
+  const amp = preset === "soft-idle" ? 1 : 0.55;
+  return {
+    Hips: [0, sway * 0.2 * amp, sway * 0.08 * amp],
+    Spine: [breath * amp, sway * 0.1 * amp, 0],
+    Spine1: [breath * 0.5 * amp, sway * 0.06 * amp, 0],
+    Spine2: [0, sway * 0.04 * amp, 0],
+    Neck: [0, sway * 0.04 * amp, 0],
+    Head: [headBob * amp, sway * 0.03 * amp, 0],
+  };
+}
+
+/**
+ * Drive glam pose presets: reset to bind, apply static offsets + motion layer.
+ * Conservative Mixamo-local Euler deltas (avoids limb inversion on Avaturn).
+ */
+function applyGlamPose(root: THREE.Object3D, p: TwinParams, t: number) {
+  resetSkeletonPose(root);
 
   const add = (name: string, dx: number, dy: number, dz: number) => {
     const b = findBone(root, name);
@@ -255,24 +407,14 @@ function applyIdlePose(root: THREE.Object3D, p: TwinParams, t: number) {
     b.rotation.z += dz;
   };
 
-  add("Hips", 0, sway * 0.2, sway * 0.08);
-  add("Spine", 0.025 + breath, sway * 0.1, p.torsoLean * 0.04);
-  add("Spine1", 0.02 + breath * 0.5, sway * 0.06, 0);
-  add("Spine2", 0.01, sway * 0.04, 0);
-  add("Neck", -0.02, -0.03 + sway * 0.04, 0);
-  add("Head", -0.015 + Math.sin(t * 0.35) * 0.006, -0.05 + sway * 0.03, 0);
+  const applyMap = (map: Record<string, BoneDelta>) => {
+    for (const [name, d] of Object.entries(map)) {
+      add(name, d[0], d[1], d[2]);
+    }
+  };
 
-  // Keep bind-pose arms (T/A) — aggressive Euler folds fight Avaturn local axes.
-  // Wave: lift right arm with a conservative offset only.
-  if (wave) {
-    add("RightShoulder", -0.35, 0.1, 0.25);
-    add("RightArm", -0.9, 0.15, 0.35);
-    add("RightForeArm", -0.7, 0, 0.1);
-  } else {
-    // Subtle relaxed drop — small enough not to invert limbs
-    add("LeftArm", 0.05, 0.02, -0.25 + p.armL * 0.15);
-    add("RightArm", 0.05, -0.02, 0.25 + p.armR * 0.15);
-  }
+  applyMap(poseStaticOffsets(p.posePreset, p));
+  applyMap(poseMotionLayer(p.posePreset, t));
 }
 
 function TwinRig() {
@@ -366,13 +508,14 @@ function TwinRig() {
     if (!wrap.current) return;
     const p = useTwinStore.getState().params;
     wrap.current.scale.setScalar(0.95 + p.height * 0.1);
-    applyIdlePose(twin, p, clock.elapsedTime);
+    applyGlamPose(twin, p, clock.elapsedTime);
     applyFeminineSilhouette(twin, p);
   });
 
   return (
     <group ref={wrap} dispose={null}>
       <primitive object={twin} />
+      <GlamWardrobe twin={twin} outfit={params.outfitPreset} />
     </group>
   );
 }

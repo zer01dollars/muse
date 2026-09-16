@@ -16,7 +16,7 @@ import { TwinAvatar, TwinLoadingFallback } from "@/components/twin/TwinAvatar";
 export type CanvasHandle = { gl: HTMLCanvasElement | null };
 
 function StudioPostFX() {
-  // Mild AO/bloom — aggressive N8AO was crushing albedo into gray mush
+  // Mild AO + glam-friendly bloom (sequin / sheer emissives pop without washing skin)
   return (
     <EffectComposer multisampling={0} enableNormalPass={false}>
       <N8AO
@@ -28,9 +28,9 @@ function StudioPostFX() {
         color="#1a1220"
       />
       <Bloom
-        luminanceThreshold={0.9}
-        luminanceSmoothing={0.4}
-        intensity={0.22}
+        luminanceThreshold={0.82}
+        luminanceSmoothing={0.35}
+        intensity={0.32}
         mipmapBlur
       />
       <Vignette offset={0.32} darkness={0.35} />

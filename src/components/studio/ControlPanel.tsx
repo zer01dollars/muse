@@ -3,7 +3,10 @@
 import { useState } from "react";
 import {
   useTwinStore,
+  OUTFIT_OPTIONS,
+  POSE_OPTIONS,
   type HairStyle,
+  type OutfitPreset,
   type PosePreset,
   type TwinParams,
 } from "@/store/twinStore";
@@ -13,11 +16,13 @@ function Accordion({
   open,
   onToggle,
   children,
+  badge,
 }: {
   title: string;
   open: boolean;
   onToggle: () => void;
   children: React.ReactNode;
+  badge?: string;
 }) {
   return (
     <div className="overflow-hidden rounded-xl border border-white/10 bg-white/[0.03]">
@@ -26,8 +31,13 @@ function Accordion({
         onClick={onToggle}
         className="flex w-full items-center justify-between px-3 py-2.5 text-left"
       >
-        <span className="text-xs font-medium uppercase tracking-[0.18em] text-amber-100/80">
+        <span className="flex items-center gap-2 text-xs font-medium uppercase tracking-[0.18em] text-amber-100/80">
           {title}
+          {badge && (
+            <span className="rounded-full bg-gradient-to-r from-fuchsia-500/30 to-amber-400/30 px-1.5 py-0.5 text-[8px] tracking-[0.14em] text-amber-100/90 ring-1 ring-amber-300/25">
+              {badge}
+            </span>
+          )}
         </span>
         <span className="text-white/40">{open ? "−" : "+"}</span>
       </button>
@@ -70,13 +80,44 @@ function Slider({
   );
 }
 
+function Chip({
+  active,
+  onClick,
+  children,
+  subtitle,
+}: {
+  active: boolean;
+  onClick: () => void;
+  children: React.ReactNode;
+  subtitle?: string;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`group rounded-xl px-2.5 py-2 text-left transition ring-1 ${
+        active
+          ? "bg-gradient-to-br from-fuchsia-500/25 via-violet-500/20 to-amber-400/20 text-amber-50 ring-amber-300/45 shadow-[0_0_20px_rgba(232,200,120,0.12)]"
+          : "text-white/55 ring-white/10 hover:bg-white/5 hover:text-white/80"
+      }`}
+    >
+      <div className="text-[10px] font-medium uppercase tracking-[0.14em]">{children}</div>
+      {subtitle && (
+        <div className={`mt-0.5 text-[9px] ${active ? "text-amber-100/55" : "text-white/30"}`}>
+          {subtitle}
+        </div>
+      )}
+    </button>
+  );
+}
 
 export function ControlPanel() {
   const params = useTwinStore((s) => s.params);
   const setParam = useTwinStore((s) => s.setParam);
   const applyPosePreset = useTwinStore((s) => s.applyPosePreset);
+  const applyOutfitPreset = useTwinStore((s) => s.applyOutfitPreset);
   const resetParams = useTwinStore((s) => s.resetParams);
-  const [open, setOpen] = useState<string>("Face");
+  const [open, setOpen] = useState<string>("Outfit");
 
   const num = (key: keyof TwinParams) => (
     <Slider
@@ -91,7 +132,7 @@ export function ControlPanel() {
       <div className="flex items-start justify-between gap-2">
         <div>
           <h2 className="font-serif text-xl text-white">Refine</h2>
-          <p className="mt-1 text-xs text-white/45">Precision controls for your twin</p>
+          <p className="mt-1 text-xs text-white/45">Glam looks · poses · precision</p>
         </div>
         <button
           type="button"
@@ -103,6 +144,62 @@ export function ControlPanel() {
       </div>
 
       <div className="flex-1 space-y-2 overflow-y-auto pr-1 scrollbar-thin">
+        <Accordion
+          title="Outfit"
+          badge="GLAM"
+          open={open === "Outfit"}
+          onToggle={() => setOpen(open === "Outfit" ? "" : "Outfit")}
+        >
+          <div className="grid grid-cols-2 gap-1.5">
+            {OUTFIT_OPTIONS.map((o) => (
+              <Chip
+                key={o.id}
+                active={params.outfitPreset === o.id}
+                onClick={() => applyOutfitPreset(o.id as OutfitPreset)}
+                subtitle={o.blurb}
+              >
+                {o.label}
+              </Chip>
+            ))}
+          </div>
+        </Accordion>
+
+        <Accordion
+          title="Pose"
+          badge="LIVE"
+          open={open === "Pose"}
+          onToggle={() => setOpen(open === "Pose" ? "" : "Pose")}
+        >
+          <div className="grid grid-cols-2 gap-1.5">
+            {POSE_OPTIONS.map((p) => (
+              <Chip
+                key={p.id}
+                active={params.posePreset === p.id}
+                onClick={() => applyPosePreset(p.id as PosePreset)}
+              >
+                {p.label}
+              </Chip>
+            ))}
+          </div>
+          <Slider
+            label="rotateY"
+            value={params.rotateY}
+            min={-Math.PI}
+            max={Math.PI}
+            step={0.01}
+            onChange={(v) => setParam("rotateY", v)}
+          />
+          {num("armL")}
+          {num("armR")}
+          <Slider
+            label="torsoLean"
+            value={params.torsoLean}
+            min={-1}
+            max={1}
+            onChange={(v) => setParam("torsoLean", v)}
+          />
+        </Accordion>
+
         <Accordion title="Face" open={open === "Face"} onToggle={() => setOpen(open === "Face" ? "" : "Face")}>
           {num("faceWidth")}
           {num("jaw")}
@@ -179,42 +276,6 @@ export function ControlPanel() {
             />
           </label>
           {num("eyeOpenness")}
-        </Accordion>
-
-        <Accordion title="Pose" open={open === "Pose"} onToggle={() => setOpen(open === "Pose" ? "" : "Pose")}>
-          <div className="flex flex-wrap gap-1.5">
-            {(["Neutral", "Confident", "Wave", "Three-quarter"] as PosePreset[]).map((p) => (
-              <button
-                key={p}
-                type="button"
-                onClick={() => applyPosePreset(p)}
-                className={`rounded-full px-2.5 py-1 text-[10px] uppercase tracking-wider ring-1 transition ${
-                  params.posePreset === p
-                    ? "bg-amber-300/20 text-amber-100 ring-amber-300/40"
-                    : "text-white/50 ring-white/10 hover:bg-white/5"
-                }`}
-              >
-                {p}
-              </button>
-            ))}
-          </div>
-          <Slider
-            label="rotateY"
-            value={params.rotateY}
-            min={-Math.PI}
-            max={Math.PI}
-            step={0.01}
-            onChange={(v) => setParam("rotateY", v)}
-          />
-          {num("armL")}
-          {num("armR")}
-          <Slider
-            label="torsoLean"
-            value={params.torsoLean}
-            min={-1}
-            max={1}
-            onChange={(v) => setParam("torsoLean", v)}
-          />
         </Accordion>
       </div>
     </div>

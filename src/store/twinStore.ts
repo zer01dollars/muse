@@ -4,7 +4,38 @@ import { create } from "zustand";
 import { persist } from "zustand/middleware";
 
 export type HairStyle = "none" | "short" | "medium" | "long" | "bun" | "pixie";
-export type PosePreset = "Neutral" | "Confident" | "Wave" | "Three-quarter";
+
+/** Glam lane outfit looks — selectable in Studio */
+export type OutfitPreset =
+  | "glam-evening"
+  | "lingerie"
+  | "club-bodycon"
+  | "sheer-glam";
+
+/** Glam lane pose presets — selectable in Studio */
+export type PosePreset =
+  | "soft-idle"
+  | "hand-on-hip"
+  | "over-shoulder"
+  | "s-curve"
+  | "club-sway"
+  | "hair-toss";
+
+export const OUTFIT_OPTIONS: { id: OutfitPreset; label: string; blurb: string }[] = [
+  { id: "glam-evening", label: "Glam evening", blurb: "Sequin mini · jewelry sheen" },
+  { id: "lingerie", label: "Lingerie", blurb: "Satin set · soft sheen" },
+  { id: "club-bodycon", label: "Club bodycon", blurb: "Cutouts · metallic accents" },
+  { id: "sheer-glam", label: "Sheer glam", blurb: "Mesh panels · glow" },
+];
+
+export const POSE_OPTIONS: { id: PosePreset; label: string }[] = [
+  { id: "soft-idle", label: "Soft idle" },
+  { id: "hand-on-hip", label: "Hand on hip" },
+  { id: "over-shoulder", label: "Over-shoulder" },
+  { id: "s-curve", label: "S-curve" },
+  { id: "club-sway", label: "Club sway" },
+  { id: "hair-toss", label: "Hair toss" },
+];
 
 export interface TwinParams {
   // Face
@@ -46,9 +77,11 @@ export interface TwinParams {
   armR: number;
   torsoLean: number;
   posePreset: PosePreset;
+  // Glam
+  outfitPreset: OutfitPreset;
 }
 
-/** Hot feminine defaults — consumer twin studio demo look */
+/** Hot feminine defaults — glam evening + soft idle */
 export const DEFAULT_TWIN: TwinParams = {
   faceWidth: 0.42,
   jaw: 0.22,
@@ -78,11 +111,12 @@ export const DEFAULT_TWIN: TwinParams = {
   hairVolume: 0.82,
   irisColor: "#3a5f8a",
   eyeOpenness: 0.9,
-  rotateY: 0.35,
-  armL: -0.15,
-  armR: -0.15,
-  torsoLean: 0.08,
-  posePreset: "Confident",
+  rotateY: 0.28,
+  armL: -0.12,
+  armR: -0.12,
+  torsoLean: 0.06,
+  posePreset: "soft-idle",
+  outfitPreset: "glam-evening",
 };
 
 export type BuildStatus = "idle" | "loading" | "detecting" | "mapping" | "ready" | "error";
@@ -93,6 +127,7 @@ interface TwinState {
   setParams: (partial: Partial<TwinParams>) => void;
   resetParams: () => void;
   applyPosePreset: (preset: PosePreset) => void;
+  applyOutfitPreset: (preset: OutfitPreset) => void;
 
   selfies: string[]; // object URLs
   addSelfie: (url: string) => void;
@@ -115,10 +150,12 @@ interface TwinState {
 }
 
 const POSE_PRESETS: Record<PosePreset, Partial<TwinParams>> = {
-  Neutral: { rotateY: 0, armL: 0, armR: 0, torsoLean: 0 },
-  Confident: { rotateY: 0.35, armL: -0.15, armR: -0.15, torsoLean: 0.08 },
-  Wave: { rotateY: -0.2, armL: 0, armR: 1.1, torsoLean: -0.05 },
-  "Three-quarter": { rotateY: 0.55, armL: 0.1, armR: -0.05, torsoLean: 0.12 },
+  "soft-idle": { rotateY: 0.28, armL: -0.12, armR: -0.12, torsoLean: 0.06 },
+  "hand-on-hip": { rotateY: 0.42, armL: 0.55, armR: -0.2, torsoLean: 0.14 },
+  "over-shoulder": { rotateY: 0.95, armL: -0.05, armR: 0.35, torsoLean: -0.08 },
+  "s-curve": { rotateY: 0.22, armL: 0.2, armR: -0.25, torsoLean: 0.18 },
+  "club-sway": { rotateY: 0.15, armL: 0.1, armR: 0.1, torsoLean: 0.05 },
+  "hair-toss": { rotateY: -0.25, armL: 0.85, armR: 0.9, torsoLean: -0.12 },
 };
 
 export const useTwinStore = create<TwinState>()(
@@ -138,6 +175,10 @@ export const useTwinStore = create<TwinState>()(
             posePreset: preset,
           },
         })),
+      applyOutfitPreset: (preset) =>
+        set((s) => ({
+          params: { ...s.params, outfitPreset: preset },
+        })),
 
       selfies: [],
       addSelfie: (url) =>
@@ -156,7 +197,7 @@ export const useTwinStore = create<TwinState>()(
       setBuildProgress: (status, progress, message) =>
         set({ buildStatus: status, buildProgress: progress, buildMessage: message }),
 
-      twinReady: true,  // show body immediately — no capsule stub
+      twinReady: true, // show body immediately — no capsule stub
       setTwinReady: (v) => set({ twinReady: v }),
 
       proUnlocked: false,
@@ -166,7 +207,7 @@ export const useTwinStore = create<TwinState>()(
       setMobileWarned: (v) => set({ mobileWarned: v }),
     }),
     {
-      name: "muse-twin-v7",
+      name: "muse-twin-v8",
       partialize: (s) => ({
         params: s.params,
         proUnlocked: s.proUnlocked,
