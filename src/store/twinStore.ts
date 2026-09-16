@@ -23,7 +23,7 @@ export type PosePreset =
 
 export const OUTFIT_OPTIONS: { id: OutfitPreset; label: string; blurb: string }[] = [
   { id: "glam-evening", label: "Glam evening", blurb: "Sequin mini · jewelry sheen" },
-  { id: "lingerie", label: "Lingerie", blurb: "Satin set · soft sheen" },
+  { id: "lingerie", label: "Lingerie", blurb: "Satin bra + briefs · skin on" },
   { id: "club-bodycon", label: "Club bodycon", blurb: "Cutouts · metallic accents" },
   { id: "sheer-glam", label: "Sheer glam", blurb: "Mesh panels · glow" },
 ];
@@ -151,11 +151,11 @@ interface TwinState {
 
 const POSE_PRESETS: Record<PosePreset, Partial<TwinParams>> = {
   "soft-idle": { rotateY: 0.28, armL: -0.12, armR: -0.12, torsoLean: 0.06 },
-  "hand-on-hip": { rotateY: 0.42, armL: 0.55, armR: -0.2, torsoLean: 0.14 },
+  "hand-on-hip": { rotateY: 0.42, armL: 0.2, armR: -0.15, torsoLean: 0.12 },
   "over-shoulder": { rotateY: 0.95, armL: -0.05, armR: 0.35, torsoLean: -0.08 },
   "s-curve": { rotateY: 0.22, armL: 0.2, armR: -0.25, torsoLean: 0.18 },
   "club-sway": { rotateY: 0.15, armL: 0.1, armR: 0.1, torsoLean: 0.05 },
-  "hair-toss": { rotateY: -0.25, armL: 0.85, armR: 0.9, torsoLean: -0.12 },
+  "hair-toss": { rotateY: -0.25, armL: 0.45, armR: 0.45, torsoLean: -0.1 },
 };
 
 export const useTwinStore = create<TwinState>()(
@@ -207,7 +207,7 @@ export const useTwinStore = create<TwinState>()(
       setMobileWarned: (v) => set({ mobileWarned: v }),
     }),
     {
-      name: "muse-twin-v8",
+      name: "muse-twin-v9",
       partialize: (s) => ({
         params: s.params,
         proUnlocked: s.proUnlocked,

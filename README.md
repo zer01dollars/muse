@@ -30,10 +30,10 @@ npm start       # serve production build
 
 ## Glam outfits
 
-Skinned Avaturn suit (`avaturn_look_0`) stays on-body for dress looks — retinted + clipped to a sleeveless mini. Lingerie hides the suit and uses bone-measured satin pieces. Body, hair, and shoes always stay visible.
+Skinned Avaturn suit (`avaturn_look_0`) stays on-body for every look — retinted + clipped. Body, hair, and shoes always stay visible (never hidden for lingerie).
 
 1. **Glam evening** — sequin mini (skinned), gold earrings, heels-tint shoes
-2. **Lingerie** — fitted satin bra + bottoms sized from hip/chest bones
+2. **Lingerie** — satin bra + panty bands clipped from the skinned suit (skin stays visible)
 3. **Club bodycon** — glossy black mini, pink sheen, metallic shoes
 4. **Sheer glam** — translucent violet mini with glow + violet earrings
 
@@ -48,7 +48,7 @@ Bone Euler deltas on the Mixamo/Avaturn skeleton (bind reset + lerp-friendly off
 5. **Club sway** — looping groove
 6. **Hair toss** — arms up pulse
 
-Default: **glam evening + soft idle**. Persist key: `muse-twin-v8`.
+Default: **glam evening + soft idle**. Persist key: `muse-twin-v9`.
 
 ## Stack
 
@@ -66,11 +66,11 @@ Legacy / animation donor (still shipped):
 
 - CC0 Vitruvian body + head + albedo PNGs (CharMorph / Antonia Polygon lineage)
 
-## Photoreal pipeline (v8)
+## Photoreal pipeline (v9)
 
 1. One complete character GLB (no head-seating / procedural hair by default)
 2. Preserve embedded PBR maps; soft skin tint + hair/iris recolor from ControlPanel
-3. Restyle skinned suit into glam minis (clip hem/sleeves); bone-fitted lingerie when needed
+3. Restyle skinned suit into glam minis / lingerie bands (clip hem/sleeves/bands); body always visible
 4. Beauty lighting (soft key / cool fill / warm rim) + studio HDRI
 5. EffectComposer: mild N8AO, glam Bloom, Vignette, SMAA
 6. Six bone-driven pose presets with soft idle / club / hair-toss loops
