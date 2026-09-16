@@ -6,7 +6,7 @@ import { useGLTF, Html } from "@react-three/drei";
 import * as SkeletonUtils from "three/examples/jsm/utils/SkeletonUtils.js";
 import * as THREE from "three";
 import { useTwinStore, type PosePreset, type TwinParams } from "@/store/twinStore";
-import { GlamWardrobe } from "@/components/twin/GlamOutfit";
+import { GlamWardrobe, applyGlamOutfit } from "@/components/twin/GlamOutfit";
 
 /** Single complete photoreal female (Avaturn) — body + head + hair + outfit. */
 const TWIN_URL = "/models/muse_twin.glb";
@@ -204,14 +204,8 @@ function enhanceMaterials(root: THREE.Object3D, params: TwinParams) {
           mat.envMapIntensity = 0.55;
         }
       } else if (n.includes("look") || n.includes("outfit") || n.includes("cloth")) {
-        // Baked suit hidden by glam wardrobe — keep quiet if visible
-        mat.roughness = Math.min(0.85, Math.max(0.4, mat.roughness ?? 0.7));
-        mat.metalness = Math.min(0.2, mat.metalness ?? 0);
-        if (mat instanceof THREE.MeshPhysicalMaterial) {
-          mat.sheen = 0.25;
-          mat.sheenColor = new THREE.Color("#d8c8e8");
-          mat.envMapIntensity = 0.7;
-        }
+        // Owned by GlamOutfit.applyGlamOutfit — do not stomp sequin/sheer styling
+        continue;
       } else if (n.includes("shoe")) {
         mat.roughness = Math.min(0.55, mat.roughness ?? 0.5);
         mat.metalness = Math.min(0.35, mat.metalness ?? 0.15);
@@ -428,6 +422,7 @@ function TwinRig() {
   useLayoutEffect(() => {
     const p0 = useTwinStore.getState().params;
     enhanceMaterials(twin, p0);
+    applyGlamOutfit(twin, p0.outfitPreset);
     applyMorphs(twin, p0);
     applyFeminineSilhouette(twin, p0);
 
@@ -451,6 +446,7 @@ function TwinRig() {
 
   useEffect(() => {
     enhanceMaterials(twin, params);
+    applyGlamOutfit(twin, params.outfitPreset);
     applyMorphs(twin, params);
     applyFeminineSilhouette(twin, params);
     // eslint-disable-next-line react-hooks/exhaustive-deps -- granular param deps avoid full-object churn
@@ -479,6 +475,7 @@ function TwinRig() {
     params.arms,
     params.legs,
     params.muscle,
+    params.outfitPreset,
   ]);
 
   useEffect(() => {

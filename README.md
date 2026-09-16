@@ -3,7 +3,7 @@
 **Realistic digital twin from selfies.**  
 Made By Zer01 — Artificially Intelligent, Digitally Enhanced.
 
-Muse is a premium consumer web app that builds a poseable 3D twin from your photos. Face analysis runs **entirely in the browser** via MediaPipe Face Landmarker. The twin is rendered with React Three Fiber using a **photoreal Avaturn female**, a **glam outfit lane** (procedural sequin / satin / bodycon / sheer), six live pose presets, studio HDRI + beauty lighting, and mild N8AO/Bloom postprocessing.
+Muse is a premium consumer web app that builds a poseable 3D twin from your photos. Face analysis runs **entirely in the browser** via MediaPipe Face Landmarker. The twin is rendered with React Three Fiber using a **photoreal Avaturn female**, a **glam outfit lane** (skinned sequin / satin / bodycon / sheer), six live pose presets, studio HDRI + beauty lighting, and mild N8AO/Bloom postprocessing.
 
 ## Quick start
 
@@ -25,17 +25,17 @@ npm start       # serve production build
 - **Studio** — selfie upload (1–3), Build twin, orbitable 3D viewport, accordion refine controls
 - **Glam lane** — 4 outfits + 6 poses selectable as chips in the Refine panel (Outfit / Pose)
 - **Face AI** — MediaPipe Tasks Vision Face Landmarker (WASM from CDN) → normalized face metrics → sliders
-- **3D** — Avaturn `muse_twin.glb` with real hair cards, PBR maps, ARKit face morphs; procedural glam wardrobe + bone-driven poses
+- **3D** — Avaturn `muse_twin.glb` with real hair cards, PBR maps, ARKit face morphs; glam wardrobe (skinned minis + fitted lingerie) + bone-driven poses
 - **Export** — canvas PNG; Free watermark `Muse · Free`; Pro demo unlock via localStorage
 
 ## Glam outfits
 
-Baked Avaturn suit mesh (`avaturn_look_0`) is hidden; procedural body-fitted MeshPhysical looks follow the hips/spine:
+Skinned Avaturn suit (`avaturn_look_0`) stays on-body for dress looks — retinted + clipped to a sleeveless mini. Lingerie hides the suit and uses bone-measured satin pieces. Body, hair, and shoes always stay visible.
 
-1. **Glam evening** — sequin mini, gold jewelry sheen, heels-tint shoes
-2. **Lingerie** — matching satin bra + bottoms (tasteful-hot)
-3. **Club bodycon** — tight sheath, side cutouts, metallic / neon accents
-4. **Sheer glam** — mesh panel dress with glow edge rings
+1. **Glam evening** — sequin mini (skinned), gold earrings, heels-tint shoes
+2. **Lingerie** — fitted satin bra + bottoms sized from hip/chest bones
+3. **Club bodycon** — glossy black mini, pink sheen, metallic shoes
+4. **Sheer glam** — translucent violet mini with glow + violet earrings
 
 ## Glam poses
 
@@ -70,7 +70,7 @@ Legacy / animation donor (still shipped):
 
 1. One complete character GLB (no head-seating / procedural hair by default)
 2. Preserve embedded PBR maps; soft skin tint + hair/iris recolor from ControlPanel
-3. Hide baked suit → procedural glam wardrobe parented to hips/spine
+3. Restyle skinned suit into glam minis (clip hem/sleeves); bone-fitted lingerie when needed
 4. Beauty lighting (soft key / cool fill / warm rim) + studio HDRI
 5. EffectComposer: mild N8AO, glam Bloom, Vignette, SMAA
 6. Six bone-driven pose presets with soft idle / club / hair-toss loops
